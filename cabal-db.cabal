@@ -1,0 +1,36 @@
+Name:                cabal-db
+Version:             0.1.0
+Synopsis:            cabal-db
+Description:         cabal-db
+License:             BSD3
+License-file:        LICENSE
+Copyright:           Vincent Hanquez <vincent@snarc.org>
+Author:              Vincent Hanquez <vincent@snarc.org>
+Maintainer:          Vincent Hanquez <vincent@snarc.org>
+Category:            Tools
+Stability:           experimental
+Build-Type:          Simple
+Homepage:            http://github.com/vincenthz/cabal-db
+Cabal-Version:       >=1.8
+data-files:          README.md
+
+Executable           cabal-db
+  Main-Is:           Main.hs
+  hs-source-dirs:    Src
+  ghc-options:       -Wall -fno-warn-orphans -fno-warn-missing-signatures
+  Build-depends:     base >= 4 && < 5
+                   , mtl
+                   , Cabal
+                   , tar
+                   , containers
+                   , filepath
+                   , directory
+                   , bytestring
+                   , utf8-string
+                   , pretty
+                   , process
+  Buildable: True
+
+source-repository head
+  type: git
+  location: git://github.com/vincenthz/cabal-db

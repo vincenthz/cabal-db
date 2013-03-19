@@ -28,7 +28,7 @@ import Data.ByteString.Lazy.UTF8 as UTF8
 import qualified Data.Map as M
 import Data.List
 
-platformPackages = map PackageName
+platformPackages = map PackageName $
     ["array"
     ,"base", "bytestring"
     ,"containers", "cgi"
@@ -49,6 +49,10 @@ platformPackages = map PackageName
     ,"vector"
     ,"xhtml"
     ,"zlib"
+    ] ++ -- not stricly platform package, but ask as such
+    ["GHC"
+    ,"Cabal"
+    ,"ghc-prim"
     ]
 
 -- FIXME use cabal's Version type.

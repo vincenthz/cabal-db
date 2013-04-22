@@ -13,4 +13,4 @@ Command
 
 check the original blog post for more information:
 
-    [http://tab.snarc.org/posts/haskell/2013-03-13-cabal-db.html]
+http://tab.snarc.org/posts/haskell/2013-03-13-cabal-db.html

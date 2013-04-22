@@ -1,5 +1,5 @@
 Name:                cabal-db
-Version:             0.1.0
+Version:             0.1.1
 Synopsis:            cabal-db
 Description:         cabal-db
 License:             BSD3
@@ -21,7 +21,7 @@ Executable           cabal-db
   Build-depends:     base >= 4 && < 5
                    , mtl
                    , Cabal
-                   , tar
+                   , tar >= 0.4.0
                    , containers
                    , filepath
                    , directory

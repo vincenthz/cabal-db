@@ -23,10 +23,11 @@ import System.Exit
 import System.Directory
 import System.FilePath
 import qualified Data.ByteString.Lazy as L
-import Data.ByteString.Lazy.UTF8 as UTF8
+import qualified Data.ByteString.Lazy.UTF8 as UTF8
 
 import qualified Data.Map as M
 import Data.List
+import Data.Maybe
 
 platformPackages = map PackageName $
     ["array"
@@ -58,6 +59,30 @@ platformPackages = map PackageName $
 -- FIXME use cabal's Version type.
 type Ver = String
 newtype AvailablePackages = AvailablePackages (M.Map PackageName [(String,L.ByteString)])
+
+-- | return cabal 00-index.tar filepath
+readCabalConfig = do
+    cfgEnv <- lookup "CABAL_CONFIG" <$> getEnvironment
+    cabalAppDir <- getAppUserDataDirectory "cabal"
+    let cabalAppConfig = cabalAppDir </> "config"
+    let configFile = fromMaybe cabalAppConfig cfgEnv
+
+    cfg <- parseConfig . preParse <$> readFile configFile
+    case (lookup "remote-repo" cfg, lookup "remote-repo-cache" cfg) of
+        (Just rrepo, Just rcache) ->
+            let (name,_) = fromMaybe (error "cannot parse remote-repo") $ parseOneLine rrepo in
+            return (rcache </> name </> "00-index.tar")
+        _ -> error ("cannot find 'remote-repo' and 'remote-repo-cache' in config file " ++ configFile)
+  where
+    parseConfig = catMaybes . map parseOneLine
+    preParse    = filter (not . isPrefixOf " ")  -- filter all spaces leading line
+                . filter (not . isPrefixOf "--") -- filter comments out
+                . filter (not . null)            -- filter null line out
+                . lines
+    parseOneLine line = let (a,b) = break (== ':') line
+                         in if null b
+                                then Nothing
+                                else Just (a, dropWhile (== ' ') $ drop 1 b)
 
 unPackageName :: PackageName -> String
 unPackageName (PackageName n) = n
@@ -91,8 +116,8 @@ foldallLatest apkgs acc f = foldM process acc (getAllPackageName apkgs)
 
 loadAvailablePackages :: IO AvailablePackages
 loadAvailablePackages = do
-    cabalAppDir <- getAppUserDataDirectory "cabal"
-    let tarFile = cabalAppDir </> "packages" </> "hackage.haskell.org" </> "00-index.tar"
+    tarFile <- readCabalConfig
+
     foldl' mkMap (AvailablePackages M.empty) . listTar . Tar.read <$> L.readFile tarFile 
 
     where listTar :: Show e => Tar.Entries e -> [([FilePath],L.ByteString)]

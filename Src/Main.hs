@@ -100,7 +100,21 @@ getAllPackageName (AvailablePackages apkgs) = M.keys apkgs
 
 getPackageVersions :: AvailablePackages -> PackageName -> Maybe [Ver]
 getPackageVersions (AvailablePackages apkgs) pn =
-    sort . map fst <$> M.lookup pn apkgs
+    sortVers . map fst <$> M.lookup pn apkgs
+
+-- | sort versions, lowest first
+sortVers :: [Ver] -> [Ver]
+sortVers = sortBy compareVer
+  where compareVer v1 v2 =
+            case (break (== '.') v1, break (== '.') v2) of
+                (("",_),("",_))   -> EQ
+                (("",_),_)        -> LT
+                (_,("",_))        -> GT
+                ((i1,r1),(i2,r2)) | i1 == i2  -> compareVer (dropDot r1) (dropDot r2)
+                                  | otherwise -> compare (read i1 :: Int) (read i2)
+        dropDot s | s == []       = s
+                  | head s == '.' = drop 1 s
+                  | otherwise     = s
 
 getPackageDescription :: AvailablePackages -> PackageName -> Maybe Ver -> Maybe GenericPackageDescription
 getPackageDescription (AvailablePackages apkgs) pn mver =

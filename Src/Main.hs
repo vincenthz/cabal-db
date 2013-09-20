@@ -292,7 +292,7 @@ doInfo (map PackageName -> args) = do
                 putStrLn (show arg)
                 putStrLn ("  synopsis: " ++ synopsis d)
                 putStrLn ("  versions: " ++ intercalate ", " vers)
-                putStrLn ("  dependencies:")
+                putStrLn ("  dependencies for " ++ (last vers) ++ ":")
                 mapM_ (\(Dependency p v) -> putStrLn ("    " ++ unPackageName p ++ " (" ++ showVerconstr v ++ ")")) (buildDepends d)
             _                  -> error "cannot resolve package"
 

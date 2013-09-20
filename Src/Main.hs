@@ -34,7 +34,7 @@ platformPackages = map PackageName $
     ,"base", "bytestring"
     ,"containers", "cgi"
     ,"deepseq","directory"
-    ,"extensible-extensions"
+    ,"extensible-exceptions"
     ,"fgl","filepath"
     ,"GLUT"
     ,"haskell-src","haskell2010","haskell98","hpc","html","HUnit"

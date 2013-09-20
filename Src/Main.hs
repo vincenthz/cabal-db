@@ -119,8 +119,8 @@ sortVers = sortBy compareVer
 getPackageDescription :: AvailablePackages -> PackageName -> Maybe Ver -> Maybe GenericPackageDescription
 getPackageDescription (AvailablePackages apkgs) pn mver =
     M.lookup pn apkgs >>= resolveVer mver >>= packageDescOfBS
-    where resolveVer Nothing pdescs  = lookup (maximum $ map fst pdescs) pdescs
-          resolveVer (Just v) pdescs = lookup v pdescs
+  where resolveVer Nothing pdescs  = lookup (last $ sortVers $ map fst pdescs) pdescs
+        resolveVer (Just v) pdescs = lookup v pdescs
 
 foldallLatest :: Monad m => AvailablePackages -> a -> (a -> PackageName -> PackageDescription -> m a) -> m a
 foldallLatest apkgs acc f = foldM process acc (getAllPackageName apkgs)

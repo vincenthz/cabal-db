@@ -50,7 +50,7 @@ platformPackages = map PackageName $
     ,"vector"
     ,"xhtml"
     ,"zlib"
-    ] ++ -- not stricly platform package, but ask as such
+    ] ++ -- not stricly platform package, but act as such
     ["GHC"
     ,"Cabal"
     ,"ghc-prim"

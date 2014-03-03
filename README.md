@@ -1,6 +1,7 @@
 A simple tool for cabal database query
 ======================================
 
+A misc set of tools to operate misc queries on the local cabal database and the associated packages
 
 Command
 -------
@@ -10,7 +11,8 @@ Command
 * info: print all available versions of a package and some misc information.
 * search-author: search all the database for match in the author field.
 * search-maintainer: search all the database for match in the maintainer field.
+* graph: generate a dot format graph of the dependency
 
-check the original blog post for more information:
+Check the original blog post for more information:
 
-http://tab.snarc.org/posts/haskell/2013-03-13-cabal-db.html
+* [Cabal-db announcement](http://tab.snarc.org/posts/haskell/2013-03-13-cabal-db.html)

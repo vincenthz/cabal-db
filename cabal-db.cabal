@@ -1,7 +1,17 @@
 Name:                cabal-db
 Version:             0.1.4
-Synopsis:            cabal-db
-Description:         cabal-db
+Synopsis:            query tools for the local cabal database (revdeps, graph, info, search-by)
+Description:
+    Query tool for the local cabal database
+    .
+      * Diff between package versions
+    .
+      * List reverse dependencies (revdeps)
+    .
+      * Search by author or maintainer
+    .
+      * Generate graphs of dependencies in dot format
+
 License:             BSD3
 License-file:        LICENSE
 Copyright:           Vincent Hanquez <vincent@snarc.org>

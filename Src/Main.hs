@@ -185,28 +185,34 @@ generateDotM boxToColor f = do
     putStrLn "}"
 
 -----------------------------------------------------------------------
-run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize $ mapM_ loop specifiedPackages
+run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize $ mapM_ (loop 0) specifiedPackages
     where colorize pn
                  | pn `elem` specifiedPackages = Just "red"
                  | pn `elem` platformPackages  = Just "green"
                  | otherwise                   = Nothing
 
-          loop :: PackageName -> StateT St IO ()
-          loop pn = do
-            pni       <- resolve pn
-            processed <- isProcessed pni
-            unless processed $ do
-                let desc = finPkgDesc <$> getPackageDescription apkgs pn Nothing
-                case desc of
-                    Just (Right (d,_)) -> do
-                        let depNames = (if hidePlatform
-                                            then filter (not . flip elem platformPackages)
-                                            else id)
-                                     $ filter (not . flip elem hiddenPackages)
-                                     $ map (\(Dependency n _) -> n) $ buildDepends d
-                        mapM_ loop depNames
-                        mapM_ (resolve >=> insertDep pni) depNames
-                    _ -> return ()
+          loop :: Int -> PackageName -> StateT St IO ()
+          loop !depth pn
+            | depth > 1000 = error "internal error: infinite loop detected"
+            | otherwise    = do
+                pni       <- resolve pn
+                processed <- isProcessed pni
+                --liftIO $ putStrLn ("loop: " ++ show pn ++ " processed: " ++ show processed ++ " depth: " ++ show depth)
+                unless processed $ do
+                    let desc = finPkgDesc <$> getPackageDescription apkgs pn Nothing
+                    case desc of
+                        Just (Right (d,_)) -> do
+                            let depNames = (if hidePlatform
+                                                then filter (not . flip elem platformPackages)
+                                                else id)
+                                         $ filter (/= pn)
+                                         $ filter (not . flip elem hiddenPackages)
+                                         $ map (\(Dependency n _) -> n) $ buildDepends d
+                            mapM_ (loop (depth+1)) depNames
+                            mapM_ (resolve >=> insertDep pni) depNames
+                        _ -> do
+                            --liftIO $ putStrLn ("warning cannot handle: " ++ show pn ++ " : " ++ show desc)
+                            return ()
 
 -----------------------------------------------------------------------
 data GraphFlag = Hide String | HidePlatform

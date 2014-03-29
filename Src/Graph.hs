@@ -21,19 +21,28 @@ data GraphSt a = GraphSt
     , depsTable  :: M.Map GraphIndex [GraphIndex]
     } deriving (Show,Eq)
 
+-- | return the graph index of a 'a' object.
+-- if it doesn't exist, it create one
+graphResolve :: (Monad m, Ord a) => a -> StateT (GraphSt a) m GraphIndex
 graphResolve pn = get >>= addOrGet
     where addOrGet st = maybe (add st) return $ M.lookup pn (indexTable st)
           add st = put (st { nextIndex = ni+1, indexTable = M.insert pn ni (indexTable st) }) >> return ni
                     where ni = nextIndex st
 
+graphIsProcessed :: (Functor f, Monad f) => GraphIndex -> StateT (GraphSt a) f Bool
 graphIsProcessed pn = M.member pn <$> gets depsTable
 
-modifyDepsTable k f = modify (\st -> st { depsTable = M.alter f k (depsTable st) })
-graphInsertDep i j = modifyDepsTable i f
-    where f Nothing  = Just [j]
-          f (Just z) = Just (j:z)
+graphInsertDep :: Monad m => GraphIndex -> GraphIndex -> StateT (GraphSt a) m ()
+graphInsertDep i j = modifyDepsTable i appendOrCreateList
+  where appendOrCreateList Nothing  = Just [j]
+        appendOrCreateList (Just z) = Just (j:z)
+        modifyDepsTable k f = modify (\st -> st { depsTable = M.alter f k (depsTable st) })
 
-withGraph f = (\st -> (indexTable st, depsTable st)) <$> execStateT f (GraphSt 1 M.empty M.empty)
+withGraph :: (Functor m, Monad m)
+          => StateT (GraphSt a) m ()
+          ->  m (M.Map a GraphIndex, M.Map GraphIndex [GraphIndex])
+withGraph f = (\st -> (indexTable st, depsTable st))
+          <$> execStateT f (GraphSt 1 M.empty M.empty)
 
 graphLoop :: Ord a
           => (a -> IO [a])

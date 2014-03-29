@@ -12,6 +12,7 @@ Command
 * search-author: search all the database for match in the author field.
 * search-maintainer: search all the database for match in the maintainer field.
 * graph: generate a dot format graph of the dependency
+* license: list all licenses used by packages and their dependencies
 
 Check the original blog post for more information:
 

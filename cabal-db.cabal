@@ -11,6 +11,8 @@ Description:
       * Search by author or maintainer
     .
       * Generate graphs of dependencies in dot format
+    .
+      * List licenses of package and their dependencies
 
 License:             BSD3
 License-file:        LICENSE

@@ -56,6 +56,6 @@ graphLoop getEdges = loop (0 :: Int)
                 processed <- graphIsProcessed pni
                 --liftIO $ putStrLn ("loop: " ++ show pn ++ " processed: " ++ show processed ++ " depth: " ++ show depth)
                 unless processed $ do
-                    depNames <- liftIO $ getEdges pn
+                    depNames <- filter (/= pn) <$> liftIO (getEdges pn)
                     mapM_ (loop (depth+1)) depNames
                     mapM_ (graphResolve >=> graphInsertDep pni) depNames

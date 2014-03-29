@@ -187,7 +187,6 @@ run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize 
                 Just (Right (d,_)) ->
                     return
                         $ (if hidePlatform then filter (not . flip elem platformPackages) else id)
-                        $ filter (/= pn)
                         $ filter (not . flip elem hiddenPackages)
                         $ map (\(Dependency n _) -> n) $ buildDepends d
                 _ -> do

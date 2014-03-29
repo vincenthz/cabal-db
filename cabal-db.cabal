@@ -1,5 +1,5 @@
 Name:                cabal-db
-Version:             0.1.5
+Version:             0.1.6
 Synopsis:            query tools for the local cabal database (revdeps, graph, info, search-by)
 Description:
     Query tool for the local cabal database

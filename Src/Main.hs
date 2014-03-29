@@ -90,6 +90,8 @@ unPackageName (PackageName n) = n
 finPkgDesc :: GenericPackageDescription -> Either [Dependency] (PackageDescription, FlagAssignment)
 finPkgDesc = finalizePackageDescription [] (const True) buildPlatform (CompilerId buildCompilerFlavor (Version []{-[7, 6, 2]-} [])) []
 
+showVerconstr c = render $ Distribution.Text.disp c
+
 packageDescOfBS bs =
     case parsePackageDescription $ UTF8.toString bs of
          ParseFailed _ -> Nothing
@@ -269,8 +271,6 @@ doDiff args =
               return ()
           cleanup (PackageName pn) v1 v2 = do
               mapM_ removeDirectoryRecursive [pn ++ "-" ++ v1, pn ++ "-" ++ v2]
-
-showVerconstr c = render $ Distribution.Text.disp c
 
 -----------------------------------------------------------------------
 doRevDeps (map PackageName -> args)

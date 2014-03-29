@@ -5,6 +5,7 @@ import Distribution.PackageDescription.Configuration
 import Distribution.PackageDescription hiding (options)
 import Distribution.Package
 import Distribution.Compiler
+import Distribution.License
 import Distribution.System
 import Distribution.Version
 import Distribution.Text
@@ -29,6 +30,7 @@ import qualified Data.ByteString.Lazy.UTF8 as UTF8
 import qualified Data.Map as M
 import Data.List
 import Data.Maybe
+import Data.Tuple (swap)
 
 import Options
 import Graph
@@ -173,6 +175,12 @@ generateDotM boxToColor f = do
         mapM_ (\dst -> putStrLn (show src ++ " -> " ++ show dst ++ ";")) dsts
     putStrLn "}"
 
+unindexify :: (M.Map a GraphIndex, M.Map GraphIndex [GraphIndex]) -> [(a, [a])]
+unindexify (aTable, edgeTable) = map (resolveKeyValues resolveIndex) $ M.toList edgeTable
+  where resolveKeyValues r (k,l) = (r k, map r l)
+        resolveIndex i = maybe (error ("internal error: unknown index: " ++ show i)) id $ M.lookup i idxTable
+        idxTable = M.fromList $ map swap $ M.toList aTable
+
 -----------------------------------------------------------------------
 run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize $ mapM_ (graphLoop getDeps) specifiedPackages
   where colorize pn
@@ -268,6 +276,50 @@ runCmd (CmdInfo (map PackageName -> args)) = do
                 putStrLn ("  dependencies for " ++ (last vers) ++ ":")
                 mapM_ (\(Dependency p v) -> putStrLn ("    " ++ unPackageName p ++ " (" ++ showVerconstr v ++ ")")) (buildDepends d)
             _                  -> error "cannot resolve package"
+
+-----------------------------------------------------------------------
+runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
+    availablePackages <- loadAvailablePackages
+    t <- M.fromList . unindexify <$> withGraph (mapM_ (graphLoop (getDeps availablePackages)) args)
+    foundLicenses <- foldM (loop availablePackages t 0) M.empty args
+
+    when ((not printTree && not printSummary) || printSummary) $ do
+        putStrLn "== license summary =="
+        forM_ (map nameAndLength $ group $ sortBy licenseCmp $ map snd $ M.toList foundLicenses) $ \(licenseName, licenseNumb) ->
+            putStrLn (ppLicense licenseName ++ ": " ++ show licenseNumb)
+  where getDeps apkgs pn = do
+            let desc = finPkgDesc <$> getPackageDescription apkgs pn Nothing
+            case desc of
+                Just (Right (d,_)) -> do
+                    let deps = map (\(Dependency n _) -> n) $ buildDepends d
+                    return deps
+                _ ->
+                    return []
+        loop apkgs tbl indentSpaces founds pn@(PackageName name)
+            | M.member pn founds = return founds
+            | otherwise = do
+                let desc = finPkgDesc <$> getPackageDescription apkgs pn Nothing
+                case desc of
+                    Just (Right (d,_)) -> do
+                        let found = license d
+                        when printTree $ putStrLn (replicate indentSpaces ' ' ++ name ++ ": " ++ ppLicense found)
+                        case M.lookup pn tbl of
+                            Just l  -> foldM (loop apkgs tbl (indentSpaces + 2)) (M.insert pn found founds) l
+                            Nothing -> error "internal error"
+                    _ -> return founds
+        licenseCmp l1 l2
+            | l1 == l2    = EQ
+            | otherwise   = compare (show l1) (show l2)
+
+        nameAndLength []      = error "empty group"
+        nameAndLength l@(x:_) = (x, length l)
+
+        ppLicense (GPL (Just (Version [v] [])))    = "GPLv" ++ show v
+        ppLicense (AGPL (Just (Version [v] [])))   = "AGPLv" ++ show v
+        ppLicense (LGPL (Just (Version [v] [])))   = "LGPLv" ++ show v
+        ppLicense (Apache (Just (Version [v] []))) = "Apache" ++ show v
+        ppLicense (UnknownLicense s)               = s
+        ppLicense l                                = show l
 
 -----------------------------------------------------------------------
 runCmd (CmdSearch term vals) = do

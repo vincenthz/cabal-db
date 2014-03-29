@@ -11,12 +11,15 @@ import Distribution.Text
 import Text.PrettyPrint
 
 import Control.Applicative
+import Control.Exception (bracket)
+import qualified Control.Exception as E
 import Control.Monad
 import Control.Monad.State
 
 import System.Environment
 import qualified Codec.Archive.Tar as Tar
 
+import System.IO.Error
 import System.Process
 import System.Exit
 import System.Directory
@@ -232,10 +235,26 @@ runCmd (CmdDiff (PackageName -> pname) v1 v2) = runDiff
                 Just vers -> do
                     when (not $ elem v1 vers) $ error ("package doesn't have version " ++ show v1)
                     when (not $ elem v2 vers) $ error ("package doesn't have version " ++ show v2)
-                    cabalUnpack pname v1
-                    cabalUnpack pname v2
-                    diff pname
-                    cleanup pname
+
+                    cd <- getCurrentDirectory
+                    bracket createTempDir (changeAndRemoveDirectory cd) $ \dir -> do
+                        putStrLn (cd ++ " " ++ dir)
+                        setCurrentDirectory dir
+                        cabalUnpack pname v1
+                        cabalUnpack pname v2
+                        diff pname
+        createTempDir = do
+            tmp <- getTemporaryDirectory
+            loopCreateDir (tmp ++ "/cabal-db-diff-") (0 :: Int)
+          where loopCreateDir prefix i = do
+                    let dir = prefix ++ show i
+                    r <- E.try (createDirectory dir)
+                    case r of
+                        Left e | isAlreadyExistsError e -> loopCreateDir prefix (i+1)
+                               | otherwise              -> E.throwIO e
+                        Right () -> return dir
+        changeAndRemoveDirectory cd dir =
+            setCurrentDirectory cd >> removeDirectoryRecursive dir
         cabalUnpack (PackageName pn) v = do
             ec <- rawSystem "cabal" ["unpack", pn ++ "-" ++ v]
             case ec of
@@ -246,8 +265,6 @@ runCmd (CmdDiff (PackageName -> pname) v1 v2) = runDiff
             let dir2 = pn ++ "-" ++ v2
             _ <- rawSystem "diff" ["-Naur", dir1, dir2]
             return ()
-        cleanup (PackageName pn) = do
-            mapM_ removeDirectoryRecursive [pn ++ "-" ++ v1, pn ++ "-" ++ v2]
 
 -----------------------------------------------------------------------
 runCmd (CmdRevdeps (map PackageName -> args))

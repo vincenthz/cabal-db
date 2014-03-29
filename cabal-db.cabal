@@ -39,6 +39,7 @@ Executable           cabal-db
                    , utf8-string
                    , pretty
                    , process
+                   , optparse-applicative
   Buildable: True
 
 source-repository head

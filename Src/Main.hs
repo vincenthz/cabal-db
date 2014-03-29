@@ -14,7 +14,6 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.State
 
-import System.Console.GetOpt
 import System.Environment
 import qualified Codec.Archive.Tar as Tar
 
@@ -28,6 +27,8 @@ import qualified Data.ByteString.Lazy.UTF8 as UTF8
 import qualified Data.Map as M
 import Data.List
 import Data.Maybe
+
+import Options
 
 platformPackages = map PackageName $
     ["array"
@@ -217,63 +218,39 @@ run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize 
                             return ()
 
 -----------------------------------------------------------------------
-data GraphFlag = Hide String | HidePlatform
-          deriving (Show,Eq)
+runCmd (CmdGraph (map PackageName -> hidden) hidePlatform (map PackageName -> pkgs)) = do
+    availablePackages <- loadAvailablePackages
+    run availablePackages hidePlatform hidden pkgs
 
-graphOptions =
-    [ Option ['h'] ["hide"] (ReqArg Hide "hide package") "package to hide"
-    , Option []    ["hide-platform"] (NoArg HidePlatform) "hide all packages from the platform"
-    ]
-
-doGraph args =
-    case getOpt Permute graphOptions args of
-        (o,n,[])   -> do availablePackages <- loadAvailablePackages
-                         let hidden = foldl' (\acc f ->
-                                                case f of
-                                                    Hide p -> PackageName p : acc
-                                                    _      -> acc) [] o
-                         let hidePlatform = HidePlatform `elem` o
-                         run availablePackages hidePlatform hidden (map PackageName n)
-        (_,_,errs) -> putStrLn "error parsing arguments:" >> mapM_ putStrLn errs
 -----------------------------------------------------------------------
-diffOptions =
-    [
-    ]
-
-doDiff args =
-    case getOpt Permute diffOptions args of
-        (_,n,[])   -> case n of
-                            [pname,v1,v2] -> runDiff (PackageName pname) v1 v2
-                            _             -> error "  diff <package-name> <ver1> <ver2>"
-        (_,_,errs) -> putStrLn "error parsing arguments:" >> mapM_ putStrLn errs
-    where runDiff pname v1 v2 = do
-             availablePackages <- loadAvailablePackages
-             let mvers = getPackageVersions availablePackages pname
-             case mvers of
+runCmd (CmdDiff (PackageName -> pname) v1 v2) = runDiff
+  where runDiff = do
+            availablePackages <- loadAvailablePackages
+            let mvers = getPackageVersions availablePackages pname
+            case mvers of
                 Nothing -> error ("no such package : " ++ show pname)
                 Just vers -> do
                     when (not $ elem v1 vers) $ error ("package doesn't have version " ++ show v1)
                     when (not $ elem v2 vers) $ error ("package doesn't have version " ++ show v2)
                     cabalUnpack pname v1
                     cabalUnpack pname v2
-                    diff pname v1 v2
-                    cleanup pname v1 v2
-                    
-          cabalUnpack (PackageName pn) v = do
-              ec <- rawSystem "cabal" ["unpack", pn ++ "-" ++ v]
-              case ec of
-                 ExitSuccess   -> return ()
-                 ExitFailure i -> error ("cabal unpack failed with error code: " ++ show i)
-          diff (PackageName pn) v1 v2 = do
-              let dir1 = pn ++ "-" ++ v1
-              let dir2 = pn ++ "-" ++ v2
-              _ <- rawSystem "diff" ["-Naur", dir1, dir2]
-              return ()
-          cleanup (PackageName pn) v1 v2 = do
-              mapM_ removeDirectoryRecursive [pn ++ "-" ++ v1, pn ++ "-" ++ v2]
+                    diff pname
+                    cleanup pname
+        cabalUnpack (PackageName pn) v = do
+            ec <- rawSystem "cabal" ["unpack", pn ++ "-" ++ v]
+            case ec of
+                ExitSuccess   -> return ()
+                ExitFailure i -> error ("cabal unpack failed with error code: " ++ show i)
+        diff (PackageName pn) = do
+            let dir1 = pn ++ "-" ++ v1
+            let dir2 = pn ++ "-" ++ v2
+            _ <- rawSystem "diff" ["-Naur", dir1, dir2]
+            return ()
+        cleanup (PackageName pn) = do
+            mapM_ removeDirectoryRecursive [pn ++ "-" ++ v1, pn ++ "-" ++ v2]
 
 -----------------------------------------------------------------------
-doRevDeps (map PackageName -> args)
+runCmd (CmdRevdeps (map PackageName -> args))
     | null args = exitSuccess
     | otherwise = do
         availablePackages <- loadAvailablePackages
@@ -288,7 +265,7 @@ doRevDeps (map PackageName -> args)
         where showDep (Dependency p v) = unPackageName p ++ " (" ++ showVerconstr v ++ ")"
 
 -----------------------------------------------------------------------
-doInfo (map PackageName -> args) = do
+runCmd (CmdInfo (map PackageName -> args)) = do
     availablePackages <- loadAvailablePackages
     forM_ args $ \arg -> do
         let vers = maybe (error ("no package " ++ show arg)) id $ getPackageVersions availablePackages arg
@@ -303,38 +280,18 @@ doInfo (map PackageName -> args) = do
             _                  -> error "cannot resolve package"
 
 -----------------------------------------------------------------------
-doSearchBy accessor args = do
+runCmd (CmdSearch term vals) = do
     availablePackages <- loadAvailablePackages
     founds <- foldallLatest availablePackages [] $ \a pkgname pkgDesc -> do
-        let found = any (\arg -> contains arg (accessor pkgDesc)) args
+        let found = any (\arg -> contains arg (accessor pkgDesc)) vals
         if found
              then return ((pkgname, pkgDesc):a)
              else return a
     mapM_ (putStrLn . unPackageName . fst) founds
-    where contains searching searched = maybe False (const True) $ find (isPrefixOf searching) $ tails searched
+  where contains searching searched = maybe False (const True) $ find (isPrefixOf searching) $ tails searched
+        accessor = toAccessor term
+        toAccessor SearchMaintainer = maintainer
+        toAccessor SearchAuthor     = author
 
 -----------------------------------------------------------------------
-commands =
-    [ ("graph", doGraph)
-    , ("diff", doDiff)
-    , ("revdeps", doRevDeps)
-    , ("info", doInfo)
-    , ("search-author", doSearchBy author)
-    , ("search-maintainer", doSearchBy maintainer)
-    ]
-
-usage = do
-    mapM_ putStrLn
-        (["usage: cabal-db <command> [args..]"
-         ,""
-         ,"known commands:"
-         ] ++ map (("  " ++) . fst ) commands)
-    exitFailure
-
-main = do
-    args <- getArgs
-    case args of
-        []        -> usage
-        cmd:args' -> case lookup cmd commands of
-                          Nothing -> usage
-                          Just f  -> f args'
+main = getOptions >>= runCmd

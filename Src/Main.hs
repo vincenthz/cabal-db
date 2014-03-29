@@ -14,7 +14,6 @@ import Control.Applicative
 import Control.Exception (bracket)
 import qualified Control.Exception as E
 import Control.Monad
-import Control.Monad.State
 
 import System.Environment
 import qualified Codec.Archive.Tar as Tar
@@ -32,6 +31,7 @@ import Data.List
 import Data.Maybe
 
 import Options
+import Graph
 
 platformPackages = map PackageName $
     ["array"
@@ -161,64 +161,38 @@ loadAvailablePackages = do
 
 -----------------------------------------------------------------------
 
-data St = St
-    { nextIndex  :: !Int 
-    , indexTable :: M.Map PackageName Int 
-    , depsTable  :: M.Map Int [Int]
-    } deriving (Show,Eq)
-
-resolve pn = get >>= addOrGet
-    where addOrGet st = maybe (add st) return $ M.lookup pn (indexTable st)
-          add st = put (st { nextIndex = ni+1, indexTable = M.insert pn ni (indexTable st) }) >> return ni
-                    where ni = nextIndex st
-
-isProcessed pn = M.member pn <$> gets depsTable
-modifyDepsTable k f = modify (\st -> st { depsTable = M.alter f k (depsTable st) })
-insertDep i j = modifyDepsTable i f
-    where f Nothing  = Just [j]
-          f (Just z) = Just (j:z)
-
 generateDotM boxToColor f = do
-    st <- execStateT f (St 1 M.empty M.empty)
+    (indexTable, depsTable) <- withGraph f
     putStrLn "digraph projects {"
-    forM_ (M.toList $ indexTable st) $ \((PackageName pn), i) -> do
+    forM_ (M.toList indexTable) $ \((PackageName pn), i) -> do
         let extra = case boxToColor (PackageName pn) of
                         Nothing -> ""
                         Just c  -> ", style=filled, fillcolor=" ++ c
         putStrLn (show i ++ " [label=\"" ++ pn ++ "\"" ++ extra ++ "];")
-    forM_ (M.toList $ depsTable st) $ \(src,dsts) ->
+    forM_ (M.toList depsTable) $ \(src,dsts) ->
         mapM_ (\dst -> putStrLn (show src ++ " -> " ++ show dst ++ ";")) dsts
     putStrLn "}"
 
 -----------------------------------------------------------------------
-run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize $ mapM_ (loop 0) specifiedPackages
-    where colorize pn
-                 | pn `elem` specifiedPackages = Just "red"
-                 | pn `elem` platformPackages  = Just "green"
-                 | otherwise                   = Nothing
+run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize $ mapM_ (graphLoop getDeps) specifiedPackages
+  where colorize pn
+            | pn `elem` specifiedPackages = Just "red"
+            | pn `elem` platformPackages  = Just "green"
+            | otherwise                   = Nothing
 
-          loop :: Int -> PackageName -> StateT St IO ()
-          loop !depth pn
-            | depth > 1000 = error "internal error: infinite loop detected"
-            | otherwise    = do
-                pni       <- resolve pn
-                processed <- isProcessed pni
-                --liftIO $ putStrLn ("loop: " ++ show pn ++ " processed: " ++ show processed ++ " depth: " ++ show depth)
-                unless processed $ do
-                    let desc = finPkgDesc <$> getPackageDescription apkgs pn Nothing
-                    case desc of
-                        Just (Right (d,_)) -> do
-                            let depNames = (if hidePlatform
-                                                then filter (not . flip elem platformPackages)
-                                                else id)
-                                         $ filter (/= pn)
-                                         $ filter (not . flip elem hiddenPackages)
-                                         $ map (\(Dependency n _) -> n) $ buildDepends d
-                            mapM_ (loop (depth+1)) depNames
-                            mapM_ (resolve >=> insertDep pni) depNames
-                        _ -> do
-                            --liftIO $ putStrLn ("warning cannot handle: " ++ show pn ++ " : " ++ show desc)
-                            return ()
+        getDeps :: PackageName -> IO [PackageName]
+        getDeps pn = do
+            let desc = finPkgDesc <$> getPackageDescription apkgs pn Nothing
+            case desc of
+                Just (Right (d,_)) ->
+                    return
+                        $ (if hidePlatform then filter (not . flip elem platformPackages) else id)
+                        $ filter (/= pn)
+                        $ filter (not . flip elem hiddenPackages)
+                        $ map (\(Dependency n _) -> n) $ buildDepends d
+                _ -> do
+                    --liftIO $ putStrLn ("warning cannot handle: " ++ show pn ++ " : " ++ show desc)
+                    return []
 
 -----------------------------------------------------------------------
 runCmd (CmdGraph (map PackageName -> hidden) hidePlatform (map PackageName -> pkgs)) = do

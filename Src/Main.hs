@@ -308,7 +308,7 @@ runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
                         let found = license d
                         when printTree $ do
                             let (lstr, ppComb) = ppLicense found
-                            PP.putDoc $ PP.indent indentSpaces (PP.text name PP.<> PP.colon PP.<+> ppComb (PP.text lstr) PP.<> PP.line)
+                            PP.putDoc $ PP.text (replicate indentSpaces ' ') PP.<> PP.text name PP.<> PP.colon PP.<+> ppComb (PP.text lstr) PP.<> PP.line
                         case M.lookup pn tbl of
                             Just l  -> foldM (loop apkgs tbl (indentSpaces + 2)) (M.insert pn found founds) l
                             Nothing -> error "internal error"

@@ -42,6 +42,7 @@ Executable           cabal-db
                    , pretty
                    , process
                    , optparse-applicative
+                   , ansi-wl-pprint
   Buildable: True
 
 source-repository head

@@ -35,6 +35,8 @@ import Data.Tuple (swap)
 import Options
 import Graph
 
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
+
 platformPackages = map PackageName $
     ["array"
     ,"base", "bytestring"
@@ -285,8 +287,10 @@ runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
 
     when ((not printTree && not printSummary) || printSummary) $ do
         putStrLn "== license summary =="
-        forM_ (map nameAndLength $ group $ sortBy licenseCmp $ map snd $ M.toList foundLicenses) $ \(licenseName, licenseNumb) ->
-            putStrLn (ppLicense licenseName ++ ": " ++ show licenseNumb)
+        forM_ (map nameAndLength $ group $ sortBy licenseCmp $ map snd $ M.toList foundLicenses) $ \(licenseName, licenseNumb) -> do
+            let (lstr, ppComb) = ppLicense licenseName
+            PP.putDoc (ppComb (PP.text lstr) PP.<> PP.colon PP.<+> PP.text (show licenseNumb) PP.<> PP.line)
+
   where getDeps apkgs pn = do
             let desc = finPkgDesc <$> getPackageDescription apkgs pn Nothing
             case desc of
@@ -302,7 +306,9 @@ runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
                 case desc of
                     Just (Right (d,_)) -> do
                         let found = license d
-                        when printTree $ putStrLn (replicate indentSpaces ' ' ++ name ++ ": " ++ ppLicense found)
+                        when printTree $ do
+                            let (lstr, ppComb) = ppLicense found
+                            PP.putDoc $ PP.indent indentSpaces (PP.text name PP.<> PP.colon PP.<+> ppComb (PP.text lstr) PP.<> PP.line)
                         case M.lookup pn tbl of
                             Just l  -> foldM (loop apkgs tbl (indentSpaces + 2)) (M.insert pn found founds) l
                             Nothing -> error "internal error"
@@ -314,12 +320,16 @@ runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
         nameAndLength []      = error "empty group"
         nameAndLength l@(x:_) = (x, length l)
 
-        ppLicense (GPL (Just (Version [v] [])))    = "GPLv" ++ show v
-        ppLicense (AGPL (Just (Version [v] [])))   = "AGPLv" ++ show v
-        ppLicense (LGPL (Just (Version [v] [])))   = "LGPLv" ++ show v
-        ppLicense (Apache (Just (Version [v] []))) = "Apache" ++ show v
-        ppLicense (UnknownLicense s)               = s
-        ppLicense l                                = show l
+        ppLicense (GPL (Just (Version [v] [])))    = ("GPLv" ++ show v, PP.yellow)
+        ppLicense (GPL Nothing)                    = ("GPL", PP.yellow)
+        ppLicense (AGPL (Just (Version [v] [])))   = ("AGPLv" ++ show v, PP.yellow)
+        ppLicense (LGPL (Just (Version [v] [])))   = ("LGPLv" ++ show v, PP.yellow)
+        ppLicense (Apache (Just (Version [v] []))) = ("Apache" ++ show v, PP.green)
+        ppLicense (UnknownLicense s)               = (s, PP.red)
+        ppLicense BSD3                             = ("BSD3", PP.green)
+        ppLicense BSD4                             = ("BSD4", PP.green)
+        ppLicense MIT                              = ("MIT", PP.green)
+        ppLicense l                                = (show l, PP.magenta)
 
 -----------------------------------------------------------------------
 runCmd (CmdSearch term vals) = do

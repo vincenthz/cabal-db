@@ -24,11 +24,13 @@ Stability:           experimental
 Build-Type:          Simple
 Homepage:            http://github.com/vincenthz/cabal-db
 Cabal-Version:       >=1.8
-data-files:          README.md
+extra-source-files:  README.md
 
 Executable           cabal-db
   Main-Is:           Main.hs
   hs-source-dirs:    Src
+  Other-modules:     Graph
+                   , Options
   ghc-options:       -Wall -fno-warn-orphans -fno-warn-missing-signatures
   Build-depends:     base >= 4 && < 5
                    , mtl

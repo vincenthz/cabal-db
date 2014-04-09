@@ -13,6 +13,7 @@ Command
 * search-maintainer: search all the database for match in the maintainer field.
 * graph: generate a dot format graph of the dependency
 * license: list all licenses used by packages and their dependencies
+* bumpable: list all the upper version bounds that could be bumped for a list of packages
 
 Check the original blog post for more information:
 

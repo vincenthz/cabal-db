@@ -209,6 +209,23 @@ runCmd (CmdGraph (map PackageName -> hidden) hidePlatform (map PackageName -> pk
     run availablePackages hidePlatform hidden pkgs
 
 -----------------------------------------------------------------------
+runCmd (CmdBumpable pkgs) = do
+    apkgs <- loadAvailablePackages
+    let getPkg n = (fmap fst . finPkgDesc) <$> getPackageDescription apkgs (PackageName n) Nothing
+        bumpables = filter (not . null . snd) $ map checkBump pkgs
+        checkBump pname = case getPkg pname of
+            Nothing -> error ("no such package : " ++ show pname)
+            Just resp -> (,) pname $ do
+                Dependency (PackageName depname) verrange <- case resp of
+                    Left d -> d
+                    Right x -> buildDepends x
+                v <- case getPkg depname of
+                         Just (Right a) -> return (pkgVersion (package a))
+                         _ -> mzero -- might be an error ?
+                guard (not (withinRange v verrange))
+                return $ PP.string depname PP.<+> PP.string "->" PP.<+> PP.cat (intersperse PP.dot (map PP.int (versionBranch v)))
+    forM_ bumpables $ \(pname, desc) -> PP.putDoc (PP.string pname PP.<$> PP.indent 4 (PP.vcat desc) PP.<> PP.line)
+-----------------------------------------------------------------------
 runCmd (CmdDiff (PackageName -> pname) v1 v2) = runDiff
   where runDiff = do
             availablePackages <- loadAvailablePackages

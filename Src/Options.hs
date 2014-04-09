@@ -35,6 +35,9 @@ data Command =
         , licensePrintSummary :: Bool
         , licensePackages :: [String]
         }
+    | CmdBumpable
+        { bumpablePackages :: [String]
+        }
 
 data SearchTerm = SearchMaintainer | SearchAuthor
 
@@ -46,6 +49,7 @@ parseCArgs = subparser
     <> command "search-author" (info (cmdSearch SearchAuthor) (progDesc "search the cabal database by author(s)"))
     <> command "search-maintainer" (info (cmdSearch SearchMaintainer) (progDesc "search the cabal database by maintainer(s)"))
     <> command "license" (info cmdLicense (progDesc "list all licenses of a set of packages and their dependencies"))
+    <> command "bumpable" (info cmdBumpable (progDesc "list all dependencies that could receive an upper-bound version bump"))
     )
   where cmdGraph = CmdGraph
                 <$> many (strOption (long "hide" <> short 'h' <> metavar "PACKAGE" <> help "package to hide"))
@@ -65,6 +69,8 @@ parseCArgs = subparser
                 <$> switch (short 't' <> long "tree" <> help "show the tree dependencies of license")
                 <*> switch (short 's' <> long "summary" <> help "Show the summary")
                 <*> packages
+        cmdBumpable = CmdBumpable
+                <$> packages
         packages = some (argument Just (metavar "<packages..>"))
 
 getOptions :: IO Command

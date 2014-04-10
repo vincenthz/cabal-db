@@ -18,3 +18,4 @@ Command
 Check the original blog post for more information:
 
 * [Cabal-db announcement](http://tab.snarc.org/posts/haskell/2013-03-13-cabal-db.html)
+* [Cabal-db license](http://tab.snarc.org/posts/haskell/2014-03-29-cabal-db-license.html)

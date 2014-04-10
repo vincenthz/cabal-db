@@ -1,6 +1,6 @@
 Name:                cabal-db
 Version:             0.1.7
-Synopsis:            query tools for the local cabal database (revdeps, graph, info, search-by)
+Synopsis:            query tools for the local cabal database (revdeps, graph, info, search-by, license, bounds)
 Description:
     Query tool for the local cabal database
     .
@@ -13,6 +13,8 @@ Description:
       * Generate graphs of dependencies in dot format
     .
       * List licenses of package and their dependencies
+    .
+      * List all the upper version bounds that could be bumped for a list of packages
 
 License:             BSD3
 License-file:        LICENSE

@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE CPP #-}
 import Distribution.PackageDescription.Parse
 import Distribution.PackageDescription.Configuration
 import Distribution.PackageDescription hiding (options)
@@ -339,7 +340,9 @@ runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
 
         ppLicense (GPL (Just (Version [v] [])))    = ("GPLv" ++ show v, PP.yellow)
         ppLicense (GPL Nothing)                    = ("GPL", PP.yellow)
+#if MIN_VERSION_Cabal(1,18,0)
         ppLicense (AGPL (Just (Version [v] [])))   = ("AGPLv" ++ show v, PP.yellow)
+#endif
         ppLicense (LGPL (Just (Version [v] [])))   = ("LGPLv" ++ show v, PP.yellow)
         ppLicense (Apache (Just (Version [v] []))) = ("Apache" ++ show v, PP.green)
         ppLicense (UnknownLicense s)               = (s, PP.red)

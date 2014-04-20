@@ -3,8 +3,9 @@ module Env
     ) where
 
 import Distribution.Package (PackageName(..))
+import qualified Data.Set as S
 
-platformPackages = map PackageName $
+platformPackages = S.fromList $ map PackageName $
     ["array"
     ,"base", "bytestring"
     ,"containers", "cgi"
@@ -31,4 +32,4 @@ platformPackages = map PackageName $
     ,"ghc-prim"
     ]
 
-isPlatformPackage pn = pn `elem` platformPackages
+isPlatformPackage pn = pn `S.member` platformPackages

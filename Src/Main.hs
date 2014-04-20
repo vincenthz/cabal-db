@@ -35,35 +35,9 @@ import Data.Tuple (swap)
 
 import Options
 import Graph
+import Env
 
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
-
-platformPackages = map PackageName $
-    ["array"
-    ,"base", "bytestring"
-    ,"containers", "cgi"
-    ,"deepseq","directory"
-    ,"extensible-exceptions"
-    ,"fgl","filepath"
-    ,"GLUT"
-    ,"haskell-src","haskell2010","haskell98","hpc","html","HUnit"
-    ,"mtl"
-    ,"network"
-    ,"old-locale","old-time","OpenGL"
-    ,"parallel","parsec","pretty","primitive","process"
-    ,"QuickCheck"
-    ,"random","regex-base","regex-compat","regex-posix"
-    ,"split","stm","syb"
-    ,"template-haskell","text","time","transformers"
-    ,"unix"
-    ,"vector"
-    ,"xhtml"
-    ,"zlib"
-    ] ++ -- not stricly platform package, but act as such
-    ["GHC"
-    ,"Cabal"
-    ,"ghc-prim"
-    ]
 
 -- FIXME use cabal's Version type.
 type Ver = String
@@ -188,7 +162,7 @@ unindexify (aTable, edgeTable) = map (resolveKeyValues resolveIndex) $ M.toList 
 run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize $ mapM_ (graphLoop getDeps) specifiedPackages
   where colorize pn
             | pn `elem` specifiedPackages = Just "red"
-            | pn `elem` platformPackages  = Just "green"
+            | isPlatformPackage pn        = Just "green"
             | otherwise                   = Nothing
 
         getDeps :: PackageName -> IO [PackageName]
@@ -197,7 +171,7 @@ run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize 
             case desc of
                 Just (Right (d,_)) ->
                     return
-                        $ (if hidePlatform then filter (not . flip elem platformPackages) else id)
+                        $ (if hidePlatform then filter (not . isPlatformPackage) else id)
                         $ filter (not . flip elem hiddenPackages)
                         $ map (\(Dependency n _) -> n) $ buildDepends d
                 _ -> do

@@ -32,16 +32,17 @@ import qualified Data.Map as M
 import Data.List
 import Data.Maybe
 import Data.Tuple (swap)
+import Data.String
 
 import Options
 import Graph
 import Env
+import Ver
 
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 -- FIXME use cabal's Version type.
-type Ver = String
-newtype AvailablePackages = AvailablePackages (M.Map PackageName [(String,L.ByteString)])
+newtype AvailablePackages = AvailablePackages (M.Map PackageName [(Ver,L.ByteString)])
 
 -- | return cabal 00-index.tar filepath
 readCabalConfig = do
@@ -85,10 +86,12 @@ getAllPackageName (AvailablePackages apkgs) = M.keys apkgs
 
 getPackageVersions :: AvailablePackages -> PackageName -> Maybe [Ver]
 getPackageVersions (AvailablePackages apkgs) pn =
-    sortVers . map fst <$> M.lookup pn apkgs
+    sort . map fst <$> M.lookup pn apkgs
 
 -- | sort versions, lowest first
 sortVers :: [Ver] -> [Ver]
+sortVers = sort
+{-
 sortVers = sortBy compareVer
   where compareVer v1 v2 =
             case (break (== '.') v1, break (== '.') v2) of
@@ -100,6 +103,7 @@ sortVers = sortBy compareVer
         dropDot s | s == []       = s
                   | head s == '.' = drop 1 s
                   | otherwise     = s
+-}
 
 getPackageDescription :: AvailablePackages -> PackageName -> Maybe Ver -> Maybe GenericPackageDescription
 getPackageDescription (AvailablePackages apkgs) pn mver =
@@ -131,7 +135,7 @@ loadAvailablePackages = do
           mkMap (AvailablePackages acc) ([(dropTrailingPathSeparator -> packagename),packageVer,_],entBS)
                 | packagename == "." = AvailablePackages acc
                 | otherwise          = AvailablePackages $ tweak (PackageName packagename)
-                                                                 (dropTrailingPathSeparator packageVer)
+                                                                 (fromString $ dropTrailingPathSeparator packageVer)
                                                                  entBS acc
                           where tweak !pname !pver !cfile !m = M.alter alterF pname m
                                   where alterF Nothing  = Just [(pver,cfile)]
@@ -201,7 +205,7 @@ runCmd (CmdBumpable pkgs) = do
                 return $ PP.string depname PP.<+> PP.string "->" PP.<+> PP.cat (intersperse PP.dot (map PP.int (versionBranch v)))
     forM_ bumpables $ \(pname, desc) -> PP.putDoc (PP.string pname PP.<$> PP.indent 4 (PP.vcat desc) PP.<> PP.line)
 -----------------------------------------------------------------------
-runCmd (CmdDiff (PackageName -> pname) v1 v2) = runDiff
+runCmd (CmdDiff (PackageName -> pname) (fromString -> v1) (fromString -> v2)) = runDiff
   where runDiff = do
             availablePackages <- loadAvailablePackages
             let mvers = getPackageVersions availablePackages pname
@@ -230,14 +234,15 @@ runCmd (CmdDiff (PackageName -> pname) v1 v2) = runDiff
                         Right () -> return dir
         changeAndRemoveDirectory cd dir =
             setCurrentDirectory cd >> removeDirectoryRecursive dir
+        cabalUnpack :: PackageName -> Ver -> IO ()
         cabalUnpack (PackageName pn) v = do
-            ec <- rawSystem "cabal" ["unpack", pn ++ "-" ++ v]
+            ec <- rawSystem "cabal" ["unpack", pn ++ "-" ++ show v]
             case ec of
                 ExitSuccess   -> return ()
                 ExitFailure i -> error ("cabal unpack failed with error code: " ++ show i)
         diff (PackageName pn) = do
-            let dir1 = pn ++ "-" ++ v1
-            let dir2 = pn ++ "-" ++ v2
+            let dir1 = pn ++ "-" ++ show v1
+            let dir2 = pn ++ "-" ++ show v2
             _ <- rawSystem "diff" ["-Naur", dir1, dir2]
             return ()
 
@@ -266,8 +271,8 @@ runCmd (CmdInfo (map PackageName -> args)) = do
             Just (Right (d,_)) -> do
                 putStrLn (show arg)
                 putStrLn ("  synopsis: " ++ synopsis d)
-                putStrLn ("  versions: " ++ intercalate ", " vers)
-                putStrLn ("  dependencies for " ++ (last vers) ++ ":")
+                putStrLn ("  versions: " ++ intercalate ", " (map show vers))
+                putStrLn ("  dependencies for " ++ show (last vers) ++ ":")
                 mapM_ (\(Dependency p v) -> putStrLn ("    " ++ unPackageName p ++ " (" ++ showVerconstr v ++ ")")) (buildDepends d)
             _                  -> error "cannot resolve package"
 

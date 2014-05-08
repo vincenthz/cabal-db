@@ -44,6 +44,33 @@ import qualified Text.PrettyPrint.ANSI.Leijen as PP
 -- FIXME use cabal's Version type.
 newtype AvailablePackages = AvailablePackages (M.Map PackageName [(Ver,L.ByteString)])
 
+data Policy =
+      Policy_Any
+    | Policy_LowerBoundOnly
+    | Policy_StrictPVP
+    | Policy_Other
+    | Policy_Many [Policy]
+    deriving (Show,Eq,Ord)
+
+showPolicy :: Policy -> PP.Doc -- String
+showPolicy Policy_Any            = PP.green $ PP.text "any"
+showPolicy Policy_LowerBoundOnly = PP.yellow $ PP.text "lower-bound"
+showPolicy Policy_StrictPVP      = PP.red $ PP.text "strict-pvp"
+showPolicy Policy_Other          = PP.blue $ PP.text "other"
+showPolicy (Policy_Many  _)      = PP.blue $ PP.text "many"
+
+getPolicy :: VersionRange -> Policy
+getPolicy vr
+    | isAnyVersion vr = Policy_Any
+    | otherwise       =
+        let vi = asVersionIntervals vr
+         in if and $ map isBounded vi
+                then Policy_StrictPVP
+                else Policy_LowerBoundOnly
+  where
+        isBounded (_, NoUpperBound)   = False
+        isBounded (_, UpperBound _ _) = True
+
 -- | return cabal 00-index.tar filepath
 readCabalConfig = do
     cfgEnv <- lookup "CABAL_CONFIG" <$> getEnvironment
@@ -71,6 +98,12 @@ readCabalConfig = do
 unPackageName :: PackageName -> String
 unPackageName (PackageName n) = n
 
+dependencyName :: Dependency -> PackageName
+dependencyName (Dependency n _) = n
+
+dependencyConstraints :: Dependency -> VersionRange
+dependencyConstraints (Dependency _ v) = v
+
 finPkgDesc :: GenericPackageDescription -> Either [Dependency] (PackageDescription, FlagAssignment)
 finPkgDesc = finalizePackageDescription [] (const True) buildPlatform (CompilerId buildCompilerFlavor (Version []{-[7, 6, 2]-} [])) []
 
@@ -88,6 +121,16 @@ getPackageVersions :: AvailablePackages -> PackageName -> Maybe [Ver]
 getPackageVersions (AvailablePackages apkgs) pn =
     sort . map fst <$> M.lookup pn apkgs
 
+getPackageDependencies :: AvailablePackages -> PackageName -> IO [Dependency]
+getPackageDependencies apkgs pn = do
+    let desc = finPkgDesc <$> getPackageDescription apkgs pn Nothing
+    case desc of
+        Just (Right (d,_)) -> return $ buildDepends d
+        _                  -> return []
+
+getPackageDependencyNames apkgs pn =
+    map dependencyName <$> getPackageDependencies apkgs pn
+
 -- | sort versions, lowest first
 sortVers :: [Ver] -> [Ver]
 sortVers = sort
@@ -97,6 +140,9 @@ getPackageDescription (AvailablePackages apkgs) pn mver =
     M.lookup pn apkgs >>= resolveVer mver >>= packageDescOfBS
   where resolveVer Nothing pdescs  = lookup (last $ sortVers $ map fst pdescs) pdescs
         resolveVer (Just v) pdescs = lookup v pdescs
+
+getPackageLatestMajorVersion :: AvailablePackages -> PackageName -> Maybe (Int,Int)
+getPackageLatestMajorVersion apkgs pn = versionMajor =<< last <$> getPackageVersions apkgs pn
 
 foldallLatest :: Monad m => AvailablePackages -> a -> (a -> PackageName -> PackageDescription -> m a) -> m a
 foldallLatest apkgs acc f = foldM process acc (getAllPackageName apkgs)
@@ -108,7 +154,7 @@ loadAvailablePackages :: IO AvailablePackages
 loadAvailablePackages = do
     tarFile <- readCabalConfig
 
-    foldl' mkMap (AvailablePackages M.empty) . listTar . Tar.read <$> L.readFile tarFile 
+    foldl' mkMap (AvailablePackages M.empty) . listTar . Tar.read <$> L.readFile tarFile
 
     where listTar :: Show e => Tar.Entries e -> [([FilePath],L.ByteString)]
           listTar (Tar.Next ent nents) =
@@ -266,7 +312,7 @@ runCmd (CmdInfo (map PackageName -> args)) = do
 -----------------------------------------------------------------------
 runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
     availablePackages <- loadAvailablePackages
-    t <- M.fromList . unindexify <$> withGraph (mapM_ (graphLoop (getDeps availablePackages)) args)
+    t <- M.fromList . unindexify <$> withGraph (mapM_ (graphLoop (getPackageDependencyNames availablePackages)) args)
     foundLicenses <- foldM (loop availablePackages t 0) M.empty args
 
     when ((not printTree && not printSummary) || printSummary) $ do
@@ -274,15 +320,7 @@ runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
         forM_ (map nameAndLength $ group $ sortBy licenseCmp $ map snd $ M.toList foundLicenses) $ \(licenseName, licenseNumb) -> do
             let (lstr, ppComb) = ppLicense licenseName
             PP.putDoc (ppComb (PP.text lstr) PP.<> PP.colon PP.<+> PP.text (show licenseNumb) PP.<> PP.line)
-
-  where getDeps apkgs pn = do
-            let desc = finPkgDesc <$> getPackageDescription apkgs pn Nothing
-            case desc of
-                Just (Right (d,_)) -> do
-                    let deps = map (\(Dependency n _) -> n) $ buildDepends d
-                    return deps
-                _ ->
-                    return []
+  where
         loop apkgs tbl indentSpaces founds pn@(PackageName name)
             | M.member pn founds = return founds
             | otherwise = do
@@ -330,6 +368,64 @@ runCmd (CmdSearch term vals) = do
         accessor = toAccessor term
         toAccessor SearchMaintainer = maintainer
         toAccessor SearchAuthor     = author
+
+-----------------------------------------------------------------------
+
+runCmd (CmdCheckRevdepsPolicy (map PackageName -> pkgs)) = do
+    availablePackages <- loadAvailablePackages
+
+    ret <- foldallLatest availablePackages M.empty $ \accOuter pkgname pkgDesc -> do
+        let deps = buildDepends pkgDesc
+        foldM (accOnDep pkgname) accOuter deps
+    forM_ (M.toList ret) $ \(p, z) -> do
+        let sums = map (\l -> (head l, length l)) $ group $ sort $ map snd $ M.toList z
+        putStrLn ("== " ++ show p)
+        forM_ (M.toList z) $ \(revDep, policy) -> do
+            PP.putDoc $ PP.indent 2 (PP.hcat [PP.string (unPackageName revDep) PP.<+> PP.colon PP.<+> showPolicy policy]) PP.<> PP.line
+        forM_ sums $ \(policy, n) ->
+            PP.putDoc $ (PP.hcat [PP.string (show n), PP.string " packages have a constraint set to ", showPolicy policy ]) PP.<> PP.line
+    return ()
+  where accOnDep pkg a dep =
+            case find (== dependencyName dep) pkgs of
+                Nothing              -> return a
+                Just packageMatching ->
+                    let vr = dependencyConstraints dep
+                     in return $ updatePolTree a packageMatching pkg (getPolicy vr)
+
+        updatePolTree :: M.Map PackageName (M.Map PackageName Policy)
+                      -> PackageName
+                      -> PackageName
+                      -> Policy
+                      -> M.Map PackageName (M.Map PackageName Policy)
+        updatePolTree a withPkg pkg pol = M.alter updateRoot withPkg a
+          where updateRoot :: Maybe (M.Map PackageName Policy) -> Maybe (M.Map PackageName Policy)
+                updateRoot Nothing  = Just (M.alter x pkg M.empty)
+                updateRoot (Just l) = Just (M.alter x pkg l)
+                x :: Maybe Policy -> Maybe Policy
+                x Nothing          = Just pol
+                x (Just actualPol) =
+                    case actualPol of
+                        Policy_Many ps | pol `elem` ps -> Just actualPol
+                                       | otherwise     -> Just $ Policy_Many (pol:ps)
+
+                        _ | actualPol == pol -> Just actualPol
+                          | otherwise        -> Just $ Policy_Many (pol:[actualPol])
+
+runCmd (CmdCheckPolicy (map PackageName -> pkgs)) = do
+    availablePackages <- loadAvailablePackages
+    matched <- foldallLatest availablePackages M.empty $ \acc pkgName pkgDesc ->
+        if pkgName `elem` pkgs
+            then return $ M.insert pkgName pkgDesc acc
+            else return acc
+    forM_ (M.toList matched) $ \(pkgName, pkgDesc) -> do
+        putStrLn ("== " ++ unPackageName pkgName)
+        let depends = map (\d -> (dependencyName d, getPolicy $ dependencyConstraints d))
+                    $ buildDepends pkgDesc
+        let sums = map (\l -> (head l, length l)) $ group $ sort $ map snd depends
+        forM_ depends $ \(n,p) ->
+            PP.putDoc $ PP.indent 4 (PP.hcat [ PP.string "* ", PP.string (unPackageName n), PP.string " = ", showPolicy p]) PP.<> PP.line
+        forM_ sums $ \(policy, n) ->
+            PP.putDoc $ PP.indent 2 (PP.hcat [ showPolicy policy, PP.string " = ", PP.string (show n), PP.string " packages"]) PP.<> PP.line
 
 -----------------------------------------------------------------------
 main = getOptions >>= runCmd

@@ -15,6 +15,10 @@ Description:
       * List licenses of package and their dependencies
     .
       * List all the upper version bounds that could be bumped for a list of packages
+    .
+      * List dependencies constraint policy in package
+    .
+      * List package's contraint policy for dependency on specific package
 
 License:             BSD3
 License-file:        LICENSE

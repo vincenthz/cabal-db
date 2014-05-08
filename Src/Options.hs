@@ -38,6 +38,12 @@ data Command =
     | CmdBumpable
         { bumpablePackages :: [String]
         }
+    | CmdCheckPolicy
+        { checkPolicyPackage :: [String]
+        }
+    | CmdCheckRevdepsPolicy
+        { checkRevdepsPolicyPackage :: [String]
+        }
 
 data SearchTerm = SearchMaintainer | SearchAuthor
 
@@ -50,6 +56,8 @@ parseCArgs = subparser
     <> command "search-maintainer" (info (cmdSearch SearchMaintainer) (progDesc "search the cabal database by maintainer(s)"))
     <> command "license" (info cmdLicense (progDesc "list all licenses of a set of packages and their dependencies"))
     <> command "bumpable" (info cmdBumpable (progDesc "list all dependencies that could receive an upper-bound version bump"))
+    <> command "check-revdeps-policy" (info cmdCheckRevdepsPolicy (progDesc "check dependencies policy for reverse dependencies of a list of packages"))
+    <> command "check-policy" (info cmdCheckPolicy (progDesc "check dependencies policy for packages"))
     )
   where cmdGraph = CmdGraph
                 <$> many (strOption (long "hide" <> short 'h' <> metavar "PACKAGE" <> help "package to hide"))
@@ -70,6 +78,10 @@ parseCArgs = subparser
                 <*> switch (short 's' <> long "summary" <> help "Show the summary")
                 <*> packages
         cmdBumpable = CmdBumpable
+                <$> packages
+        cmdCheckRevdepsPolicy = CmdCheckRevdepsPolicy
+                <$> packages
+        cmdCheckPolicy = CmdCheckPolicy
                 <$> packages
         packages = some (argument Just (metavar "<packages..>"))
 

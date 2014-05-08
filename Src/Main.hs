@@ -91,19 +91,6 @@ getPackageVersions (AvailablePackages apkgs) pn =
 -- | sort versions, lowest first
 sortVers :: [Ver] -> [Ver]
 sortVers = sort
-{-
-sortVers = sortBy compareVer
-  where compareVer v1 v2 =
-            case (break (== '.') v1, break (== '.') v2) of
-                (("",_),("",_))   -> EQ
-                (("",_),_)        -> LT
-                (_,("",_))        -> GT
-                ((i1,r1),(i2,r2)) | i1 == i2  -> compareVer (dropDot r1) (dropDot r2)
-                                  | otherwise -> compare (read i1 :: Int) (read i2)
-        dropDot s | s == []       = s
-                  | head s == '.' = drop 1 s
-                  | otherwise     = s
--}
 
 getPackageDescription :: AvailablePackages -> PackageName -> Maybe Ver -> Maybe GenericPackageDescription
 getPackageDescription (AvailablePackages apkgs) pn mver =

@@ -37,6 +37,9 @@ Executable           cabal-db
   hs-source-dirs:    Src
   Other-modules:     Graph
                    , Options
+                   , Printing
+                   , Env
+                   , Ver
   ghc-options:       -Wall -fno-warn-orphans -fno-warn-missing-signatures
   Build-depends:     base >= 4 && < 5
                    , mtl

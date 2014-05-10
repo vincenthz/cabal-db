@@ -38,6 +38,7 @@ import Options
 import Graph
 import Env
 import Ver
+import Printing
 
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
@@ -321,7 +322,7 @@ runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
         putStrLn "== license summary =="
         forM_ (map nameAndLength $ group $ sortBy licenseCmp $ map snd $ M.toList foundLicenses) $ \(licenseName, licenseNumb) -> do
             let (lstr, ppComb) = ppLicense licenseName
-            PP.putDoc (ppComb (PP.text lstr) PP.<> PP.colon PP.<+> PP.text (show licenseNumb) PP.<> PP.line)
+            ppLine 0 (ppComb lstr PP.<> PP.colon PP.<+> PP.text (show licenseNumb))
   where
         loop apkgs tbl indentSpaces founds pn@(PackageName name)
             | M.member pn founds = return founds
@@ -332,7 +333,7 @@ runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
                         let found = license d
                         when printTree $ do
                             let (lstr, ppComb) = ppLicense found
-                            PP.putDoc $ PP.text (replicate indentSpaces ' ') PP.<> PP.text name PP.<> PP.colon PP.<+> ppComb (PP.text lstr) PP.<> PP.line
+                            ppLine 0 (PP.text (replicate indentSpaces ' ') PP.<> PP.text name PP.<> PP.colon PP.<+> ppComb lstr)
                         case M.lookup pn tbl of
                             Just l  -> foldM (loop apkgs tbl (indentSpaces + 2)) (M.insert pn found founds) l
                             Nothing -> error "internal error"
@@ -344,18 +345,18 @@ runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
         nameAndLength []      = error "empty group"
         nameAndLength l@(x:_) = (x, length l)
 
-        ppLicense (GPL (Just (Version [v] [])))    = ("GPLv" ++ show v, PP.yellow)
-        ppLicense (GPL Nothing)                    = ("GPL", PP.yellow)
+        ppLicense (GPL (Just (Version [v] [])))    = ("GPLv" ++ show v, col Yellow)
+        ppLicense (GPL Nothing)                    = ("GPL", col Yellow)
 #if MIN_VERSION_Cabal(1,18,0)
-        ppLicense (AGPL (Just (Version [v] [])))   = ("AGPLv" ++ show v, PP.yellow)
+        ppLicense (AGPL (Just (Version [v] [])))   = ("AGPLv" ++ show v, col Yellow)
 #endif
-        ppLicense (LGPL (Just (Version [v] [])))   = ("LGPLv" ++ show v, PP.yellow)
-        ppLicense (Apache (Just (Version [v] []))) = ("Apache" ++ show v, PP.green)
-        ppLicense (UnknownLicense s)               = (s, PP.red)
-        ppLicense BSD3                             = ("BSD3", PP.green)
-        ppLicense BSD4                             = ("BSD4", PP.green)
-        ppLicense MIT                              = ("MIT", PP.green)
-        ppLicense l                                = (show l, PP.magenta)
+        ppLicense (LGPL (Just (Version [v] [])))   = ("LGPLv" ++ show v, col Yellow)
+        ppLicense (Apache (Just (Version [v] []))) = ("Apache" ++ show v, col Green)
+        ppLicense (UnknownLicense s)               = (s, col Red)
+        ppLicense BSD3                             = ("BSD3", col Green)
+        ppLicense BSD4                             = ("BSD4", col Green)
+        ppLicense MIT                              = ("MIT", col Green)
+        ppLicense l                                = (show l, col Magenta)
 
 -----------------------------------------------------------------------
 runCmd (CmdSearch term vals) = do
@@ -383,9 +384,9 @@ runCmd (CmdCheckRevdepsPolicy (map PackageName -> pkgs)) = do
         let sums = map (\l -> (head l, length l)) $ group $ sort $ map snd $ M.toList z
         putStrLn ("== " ++ show p)
         forM_ (M.toList z) $ \(revDep, policy) -> do
-            PP.putDoc $ PP.indent 2 (PP.hcat [PP.string (unPackageName revDep) PP.<+> PP.colon PP.<+> showPolicy policy]) PP.<> PP.line
+            ppLine 2 $ PP.hcat [PP.string (unPackageName revDep), PP.colon, showPolicy policy]
         forM_ sums $ \(policy, n) ->
-            PP.putDoc $ (PP.hcat [PP.string (show n), PP.string " packages have a constraint set to ", showPolicy policy ]) PP.<> PP.line
+            ppLine 0 $ PP.hcat [PP.string (show n), PP.string " packages have a constraint set to ", showPolicy policy ]
     return ()
   where accOnDep allPackages pkg a dep =
             case find (== dependencyName dep) pkgs of
@@ -425,9 +426,9 @@ runCmd (CmdCheckPolicy (map PackageName -> pkgs)) = do
                     $ buildDepends pkgDesc
         let sums = map (\l -> (head l, length l)) $ group $ sort $ map snd depends
         forM_ depends $ \(n,p) ->
-            PP.putDoc $ PP.indent 4 (PP.hcat [ PP.string "* ", PP.string (unPackageName n), PP.string " = ", showPolicy p]) PP.<> PP.line
+            ppLine 4 $ PP.hcat [ PP.string "* ", PP.string (unPackageName n), PP.string " = ", showPolicy p]
         forM_ sums $ \(policy, n) ->
-            PP.putDoc $ PP.indent 2 (PP.hcat [ showPolicy policy, PP.string " = ", PP.string (show n), PP.string " packages"]) PP.<> PP.line
+            ppLine 2 $ PP.hcat [ showPolicy policy, PP.string " = ", PP.string (show n), PP.string " packages"]
 
 runCmd (CmdForAll) = do
     return ()

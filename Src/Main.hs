@@ -45,22 +45,24 @@ import qualified Text.PrettyPrint.ANSI.Leijen as PP
 newtype AvailablePackages = AvailablePackages (M.Map PackageName [(Ver,L.ByteString)])
 
 data Policy =
-      Policy_Any
-    | Policy_LowerBoundOnly
-    | Policy_StrictPVP
-    | Policy_Other
-    | Policy_Many [Policy]
+      Policy_Any            -- ^ no bounds
+    | Policy_LowerBoundOnly -- ^ only a lower specified
+    | Policy_Bounded        -- ^ when both bounds specified but not following the pvp as the version is not correct
+    | Policy_StrictPVP      -- ^ follow the PVP, lower bound, and higher bounds not greater to one that exist.
+    | Policy_Other          -- ^ unspecified
+    | Policy_Many [Policy]  -- ^ multiple policy in the same file. something probably went wrong in cabal-db :)
     deriving (Show,Eq,Ord)
 
 showPolicy :: Policy -> PP.Doc -- String
 showPolicy Policy_Any            = PP.green $ PP.text "any"
 showPolicy Policy_LowerBoundOnly = PP.yellow $ PP.text "lower-bound"
 showPolicy Policy_StrictPVP      = PP.red $ PP.text "strict-pvp"
+showPolicy Policy_Bounded        = PP.blue $ PP.text "bounded"
 showPolicy Policy_Other          = PP.blue $ PP.text "other"
 showPolicy (Policy_Many  _)      = PP.blue $ PP.text "many"
 
-getPolicy :: VersionRange -> Policy
-getPolicy vr
+getPolicy :: AvailablePackages -> VersionRange -> Policy
+getPolicy (AvailablePackages apkgs) vr
     | isAnyVersion vr = Policy_Any
     | otherwise       =
         let vi = asVersionIntervals vr
@@ -376,7 +378,7 @@ runCmd (CmdCheckRevdepsPolicy (map PackageName -> pkgs)) = do
 
     ret <- foldallLatest availablePackages M.empty $ \accOuter pkgname pkgDesc -> do
         let deps = buildDepends pkgDesc
-        foldM (accOnDep pkgname) accOuter deps
+        foldM (accOnDep availablePackages pkgname) accOuter deps
     forM_ (M.toList ret) $ \(p, z) -> do
         let sums = map (\l -> (head l, length l)) $ group $ sort $ map snd $ M.toList z
         putStrLn ("== " ++ show p)
@@ -385,12 +387,12 @@ runCmd (CmdCheckRevdepsPolicy (map PackageName -> pkgs)) = do
         forM_ sums $ \(policy, n) ->
             PP.putDoc $ (PP.hcat [PP.string (show n), PP.string " packages have a constraint set to ", showPolicy policy ]) PP.<> PP.line
     return ()
-  where accOnDep pkg a dep =
+  where accOnDep allPackages pkg a dep =
             case find (== dependencyName dep) pkgs of
                 Nothing              -> return a
                 Just packageMatching ->
                     let vr = dependencyConstraints dep
-                     in return $ updatePolTree a packageMatching pkg (getPolicy vr)
+                     in return $ updatePolTree a packageMatching pkg (getPolicy allPackages vr)
 
         updatePolTree :: M.Map PackageName (M.Map PackageName Policy)
                       -> PackageName
@@ -419,7 +421,7 @@ runCmd (CmdCheckPolicy (map PackageName -> pkgs)) = do
             else return acc
     forM_ (M.toList matched) $ \(pkgName, pkgDesc) -> do
         putStrLn ("== " ++ unPackageName pkgName)
-        let depends = map (\d -> (dependencyName d, getPolicy $ dependencyConstraints d))
+        let depends = map (\d -> (dependencyName d, getPolicy availablePackages $ dependencyConstraints d))
                     $ buildDepends pkgDesc
         let sums = map (\l -> (head l, length l)) $ group $ sort $ map snd depends
         forM_ depends $ \(n,p) ->

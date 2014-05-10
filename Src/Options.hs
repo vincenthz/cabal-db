@@ -6,6 +6,7 @@ module Options
 
 import Options.Applicative
 import Paths_cabal_db (version)
+import Data.Monoid (mconcat)
 import Data.Version
 import Data.List (intercalate)
 
@@ -44,21 +45,23 @@ data Command =
     | CmdCheckRevdepsPolicy
         { checkRevdepsPolicyPackage :: [String]
         }
+    | CmdForAll
 
 data SearchTerm = SearchMaintainer | SearchAuthor
 
-parseCArgs = subparser
-    (  command "graph" (info cmdGraph (progDesc "generate a .dot dependencies graph of all the packages in argument"))
-    <> command "diff" (info cmdDiff (progDesc "generate a diff between two versions of a package"))
-    <> command "revdeps" (info cmdRevdeps (progDesc "list all reverse dependencies of a set of packages"))
-    <> command "info" (info cmdInfo (progDesc "list some information about a set of packages"))
-    <> command "search-author" (info (cmdSearch SearchAuthor) (progDesc "search the cabal database by author(s)"))
-    <> command "search-maintainer" (info (cmdSearch SearchMaintainer) (progDesc "search the cabal database by maintainer(s)"))
-    <> command "license" (info cmdLicense (progDesc "list all licenses of a set of packages and their dependencies"))
-    <> command "bumpable" (info cmdBumpable (progDesc "list all dependencies that could receive an upper-bound version bump"))
-    <> command "check-revdeps-policy" (info cmdCheckRevdepsPolicy (progDesc "check dependencies policy for reverse dependencies of a list of packages"))
-    <> command "check-policy" (info cmdCheckPolicy (progDesc "check dependencies policy for packages"))
-    )
+commands =
+    [ ("graph", cmdGraph, "generate a .dot dependencies graph of all the packages in argument")
+    , ("diff", cmdDiff, "generate a diff between two versions of a package")
+    , ("revdeps", cmdRevdeps, "list all reverse dependencies of a set of packages")
+    , ("info", cmdInfo, "list some information about a set of packages")
+    , ("search-author", cmdSearch SearchAuthor, "search the cabal database by author(s)")
+    , ("search-maintainer", cmdSearch SearchMaintainer, "search the cabal database by maintainer(s)")
+    , ("license", cmdLicense, "list all licenses of a set of packages and their dependencies")
+    , ("bumpable", cmdBumpable, "list all dependencies that could receive an upper-bound version bump")
+    , ("check-revdeps-policy", cmdCheckRevdepsPolicy, "check dependencies policy for reverse dependencies of a list of packages")
+    , ("check-policy", cmdCheckPolicy, "check dependencies policy for packages")
+    , ("forall", cmdForAll, "forall packages (debug)")
+    ]
   where cmdGraph = CmdGraph
                 <$> many (strOption (long "hide" <> short 'h' <> metavar "PACKAGE" <> help "package to hide"))
                 <*> switch (long "hide-platform" <> help "Hide all packages from the platform")
@@ -83,9 +86,9 @@ parseCArgs = subparser
                 <$> packages
         cmdCheckPolicy = CmdCheckPolicy
                 <$> packages
+        cmdForAll = pure CmdForAll
         packages = some (argument Just (metavar "<packages..>"))
 
 getOptions :: IO Command
-getOptions = execParser (info (pVersion *> parseCArgs <**> helper) idm)
-  where pVersion = infoOption ver (long "version" <> help "Print version information")
-        ver = intercalate "." $ map show $ versionBranch version
+getOptions = execParser (info (parseCArgs <**> helper) idm)
+  where parseCArgs = subparser $ mconcat $ map (\(name, v, desc) -> command name (info v (progDesc desc))) commands

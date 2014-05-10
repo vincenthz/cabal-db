@@ -427,5 +427,8 @@ runCmd (CmdCheckPolicy (map PackageName -> pkgs)) = do
         forM_ sums $ \(policy, n) ->
             PP.putDoc $ PP.indent 2 (PP.hcat [ showPolicy policy, PP.string " = ", PP.string (show n), PP.string " packages"]) PP.<> PP.line
 
+runCmd (CmdForAll) = do
+    return ()
+
 -----------------------------------------------------------------------
 main = getOptions >>= runCmd

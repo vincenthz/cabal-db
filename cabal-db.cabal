@@ -1,6 +1,6 @@
 Name:                cabal-db
-Version:             0.1.9
-Synopsis:            query tools for the local cabal database (revdeps, graph, info, search-by, license, bounds)
+Version:             0.1.10
+Synopsis:            query tools for the local cabal database
 Description:
     Query tool for the local cabal database
     .

@@ -351,7 +351,9 @@ runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
         ppLicense (AGPL (Just (Version [v] [])))   = ("AGPLv" ++ show v, col Yellow)
 #endif
         ppLicense (LGPL (Just (Version [v] [])))   = ("LGPLv" ++ show v, col Yellow)
+#if MIN_VERSION_Cabal(1,16,0)
         ppLicense (Apache (Just (Version [v] []))) = ("Apache" ++ show v, col Green)
+#endif
         ppLicense (UnknownLicense s)               = (s, col Red)
         ppLicense BSD3                             = ("BSD3", col Green)
         ppLicense BSD4                             = ("BSD4", col Green)

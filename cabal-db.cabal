@@ -52,7 +52,7 @@ Executable           cabal-db
                    , utf8-string
                    , pretty
                    , process
-                   , optparse-applicative
+                   , optparse-applicative >= 0.11
                    , ansi-wl-pprint
   Buildable: True
 

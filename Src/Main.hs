@@ -63,7 +63,7 @@ showPolicy Policy_Other          = PP.blue $ PP.text "other"
 showPolicy (Policy_Many  _)      = PP.blue $ PP.text "many"
 
 getPolicy :: AvailablePackages -> VersionRange -> Policy
-getPolicy (AvailablePackages apkgs) vr
+getPolicy (AvailablePackages _apkgs) vr
     | isAnyVersion vr = Policy_Any
     | otherwise       =
         let vi = asVersionIntervals vr

@@ -5,10 +5,7 @@ module Options
     ) where
 
 import Options.Applicative
-import Paths_cabal_db (version)
 import Data.Monoid (mconcat)
-import Data.Version
-import Data.List (intercalate)
 
 data Command =
       CmdGraph
@@ -67,15 +64,15 @@ commands =
                 <*> switch (long "hide-platform" <> help "Hide all packages from the platform")
                 <*> packages
         cmdDiff = CmdDiff
-                <$> argument Just (metavar "<package>")
-                <*> argument Just (metavar "<ver1>")
-                <*> argument Just (metavar "<ver2>")
+                <$> argument str (metavar "<package>")
+                <*> argument str (metavar "<ver1>")
+                <*> argument str (metavar "<ver2>")
         cmdRevdeps = CmdRevdeps
                 <$> packages
         cmdInfo = CmdInfo
                 <$> packages
         cmdSearch accessor = CmdSearch accessor
-                <$> many (argument Just (metavar "<search-term>"))
+                <$> many (argument str (metavar "<search-term>"))
         cmdLicense = CmdLicense
                 <$> switch (short 't' <> long "tree" <> help "show the tree dependencies of license")
                 <*> switch (short 's' <> long "summary" <> help "Show the summary")
@@ -87,7 +84,7 @@ commands =
         cmdCheckPolicy = CmdCheckPolicy
                 <$> packages
         cmdForAll = pure CmdForAll
-        packages = some (argument Just (metavar "<packages..>"))
+        packages = some (argument str (metavar "<packages..>"))
 
 getOptions :: IO Command
 getOptions = execParser (info (parseCArgs <**> helper) idm)

@@ -29,6 +29,7 @@ import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.UTF8 as UTF8
 
 import qualified Data.Map as M
+import Data.Either
 import Data.List
 import Data.Maybe
 import Data.Tuple (swap)
@@ -134,6 +135,20 @@ getPackageDependencies apkgs pn = do
 getPackageDependencyNames apkgs pn =
     map dependencyName <$> getPackageDependencies apkgs pn
 
+cabalFileToPkgName f = [takeBaseName f, "10000", ""]
+
+-- | partiion a list of arguments that refer to package
+-- either by their package name, or directly to a cabal file
+packageArgs :: [String] -> IO ([PackageName], [FilePath])
+packageArgs args = partitionEithers <$> mapM classifyArgs args
+  where classifyArgs :: String -> IO (Either PackageName FilePath)
+        classifyArgs arg = do
+            existingFile <- doesFileExist arg
+            return $ if existingFile && hasCabalExtension
+                then Right arg
+                else Left $ PackageName arg
+          where hasCabalExtension = ".cabal" `isSuffixOf` arg
+
 -- | sort versions, lowest first
 sortVers :: [Ver] -> [Ver]
 sortVers = sort
@@ -153,11 +168,14 @@ foldallLatest apkgs acc f = foldM process acc (getAllPackageName apkgs)
                                 Just (Right (pd, _)) -> f a pn pd
                                 _                    -> return a
 
-loadAvailablePackages :: IO AvailablePackages
-loadAvailablePackages = do
+-- | Load the available packages from the tarball then append
+-- an extra list of packages that are directly refered by filepath to their .cabal
+loadAvailablePackages :: [String] -> IO AvailablePackages
+loadAvailablePackages extras = do
     tarFile <- readCabalConfig
 
-    foldl' mkMap (AvailablePackages M.empty) . listTar . Tar.read <$> L.readFile tarFile
+    m1 <- foldr mkMap (AvailablePackages M.empty) . listTar . Tar.read <$> L.readFile tarFile
+    foldr mkMap m1 <$> mapM (\f -> L.readFile f >>= \l -> return (cabalFileToPkgName f, l)) extras
 
     where listTar :: Show e => Tar.Entries e -> [([FilePath],L.ByteString)]
           listTar (Tar.Next ent nents) =
@@ -167,8 +185,8 @@ loadAvailablePackages = do
           listTar Tar.Done             = []
           listTar (Tar.Fail err)       = error ("failed: " ++ show err)
 
-          mkMap :: AvailablePackages -> ([FilePath], L.ByteString) -> AvailablePackages
-          mkMap (AvailablePackages acc) ([(dropTrailingPathSeparator -> packagename),packageVer,_],entBS)
+          mkMap :: ([FilePath], L.ByteString) -> AvailablePackages -> AvailablePackages
+          mkMap ([(dropTrailingPathSeparator -> packagename),packageVer,_],entBS) (AvailablePackages acc)
                 | packagename == "." = AvailablePackages acc
                 | otherwise          = AvailablePackages $ tweak (PackageName packagename)
                                                                  (fromString $ dropTrailingPathSeparator packageVer)
@@ -176,7 +194,7 @@ loadAvailablePackages = do
                           where tweak !pname !pver !cfile !m = M.alter alterF pname m
                                   where alterF Nothing  = Just [(pver,cfile)]
                                         alterF (Just z) = Just ((pver,cfile) : z)
-          mkMap nacc _ = nacc
+          mkMap _ nacc = nacc
 
 -----------------------------------------------------------------------
 
@@ -219,13 +237,14 @@ run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize 
                     return []
 
 -----------------------------------------------------------------------
-runCmd (CmdGraph (map PackageName -> hidden) hidePlatform (map PackageName -> pkgs)) = do
-    availablePackages <- loadAvailablePackages
-    run availablePackages hidePlatform hidden pkgs
+runCmd (CmdGraph (map PackageName -> hidden) hidePlatform rawArgs) = do
+    (pkgNames, pkgFileNames) <- packageArgs rawArgs
+    availablePackages        <- loadAvailablePackages pkgFileNames
+    run availablePackages hidePlatform hidden pkgNames
 
 -----------------------------------------------------------------------
 runCmd (CmdBumpable pkgs) = do
-    apkgs <- loadAvailablePackages
+    apkgs <- loadAvailablePackages []
     let getPkg n = (fmap fst . finPkgDesc) <$> getPackageDescription apkgs (PackageName n) Nothing
         bumpables = filter (not . null . snd) $ map checkBump pkgs
         checkBump pname = case getPkg pname of
@@ -243,7 +262,7 @@ runCmd (CmdBumpable pkgs) = do
 -----------------------------------------------------------------------
 runCmd (CmdDiff (PackageName -> pname) (fromString -> v1) (fromString -> v2)) = runDiff
   where runDiff = do
-            availablePackages <- loadAvailablePackages
+            availablePackages <- loadAvailablePackages []
             let mvers = getPackageVersions availablePackages pname
             case mvers of
                 Nothing -> error ("no such package : " ++ show pname)
@@ -283,23 +302,25 @@ runCmd (CmdDiff (PackageName -> pname) (fromString -> v1) (fromString -> v2)) = 
             return ()
 
 -----------------------------------------------------------------------
-runCmd (CmdRevdeps (map PackageName -> args))
-    | null args = exitSuccess
+runCmd (CmdRevdeps rawArgs)
+    | null rawArgs = exitSuccess
     | otherwise = do
-        availablePackages <- loadAvailablePackages
+        (pkgNames, pkgFileNames) <- packageArgs rawArgs
+        availablePackages <- loadAvailablePackages pkgFileNames
+    
         founds <- foldallLatest availablePackages [] $ \a pkgname pkgDesc -> do
-            let found = any (\(Dependency n _) -> n `elem` args) (buildDepends pkgDesc)
+            let found = any (\(Dependency n _) -> n `elem` pkgNames) (buildDepends pkgDesc)
             if found
                 then return ((pkgname, pkgDesc):a)
                 else return a
         forM_ founds $ \(pkgname,pdesc) -> do
-            let deps = filter (\(Dependency n _) -> n `elem` args) $ buildDepends pdesc
+            let deps = filter (\(Dependency n _) -> n `elem` pkgNames) $ buildDepends pdesc
             putStrLn (unPackageName pkgname ++ ": " ++ intercalate ", " (map showDep deps))
         where showDep (Dependency p v) = unPackageName p ++ " (" ++ showVerconstr v ++ ")"
 
 -----------------------------------------------------------------------
 runCmd (CmdInfo (map PackageName -> args)) = do
-    availablePackages <- loadAvailablePackages
+    availablePackages <- loadAvailablePackages []
     forM_ args $ \arg -> do
         let vers = maybe (error ("no package " ++ show arg)) id $ getPackageVersions availablePackages arg
         let pdesc = finPkgDesc <$> getPackageDescription availablePackages arg Nothing
@@ -313,10 +334,13 @@ runCmd (CmdInfo (map PackageName -> args)) = do
             _                  -> error "cannot resolve package"
 
 -----------------------------------------------------------------------
-runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
-    availablePackages <- loadAvailablePackages
-    t <- M.fromList . unindexify <$> withGraph (mapM_ (graphLoop (getPackageDependencyNames availablePackages)) args)
-    foundLicenses <- foldM (loop availablePackages t 0) M.empty args
+runCmd (CmdLicense printTree printSummary rawArgs) = do
+    (pkgNames, pkgFileNames) <- packageArgs rawArgs
+
+    availablePackages <- loadAvailablePackages pkgFileNames
+
+    t <- M.fromList . unindexify <$> withGraph (mapM_ (graphLoop (getPackageDependencyNames availablePackages)) pkgNames)
+    foundLicenses <- foldM (loop availablePackages t 0) M.empty pkgNames
 
     when ((not printTree && not printSummary) || printSummary) $ do
         putStrLn "== license summary =="
@@ -362,7 +386,7 @@ runCmd (CmdLicense printTree printSummary (map PackageName -> args)) = do
 
 -----------------------------------------------------------------------
 runCmd (CmdSearch term vals) = do
-    availablePackages <- loadAvailablePackages
+    availablePackages <- loadAvailablePackages []
     founds <- foldallLatest availablePackages [] $ \a pkgname pkgDesc -> do
         let found = any (\arg -> contains arg (accessor pkgDesc)) vals
         if found
@@ -376,12 +400,13 @@ runCmd (CmdSearch term vals) = do
 
 -----------------------------------------------------------------------
 
-runCmd (CmdCheckRevdepsPolicy (map PackageName -> pkgs)) = do
-    availablePackages <- loadAvailablePackages
+runCmd (CmdCheckRevdepsPolicy rawArgs) = do
+    (pkgNames, pkgFileNames) <- packageArgs rawArgs
+    availablePackages <- loadAvailablePackages pkgFileNames
 
     ret <- foldallLatest availablePackages M.empty $ \accOuter pkgname pkgDesc -> do
         let deps = buildDepends pkgDesc
-        foldM (accOnDep availablePackages pkgname) accOuter deps
+        foldM (accOnDep pkgNames availablePackages pkgname) accOuter deps
     forM_ (M.toList ret) $ \(p, z) -> do
         let sums = map (\l -> (head l, length l)) $ group $ sort $ map snd $ M.toList z
         putStrLn ("== " ++ show p)
@@ -390,8 +415,8 @@ runCmd (CmdCheckRevdepsPolicy (map PackageName -> pkgs)) = do
         forM_ sums $ \(policy, n) ->
             ppLine 0 $ PP.hcat [PP.string (show n), PP.string " packages have a constraint set to ", showPolicy policy ]
     return ()
-  where accOnDep allPackages pkg a dep =
-            case find (== dependencyName dep) pkgs of
+  where accOnDep pkgNames allPackages pkg a dep =
+            case find (== dependencyName dep) pkgNames of
                 Nothing              -> return a
                 Just packageMatching ->
                     let vr = dependencyConstraints dep
@@ -416,10 +441,13 @@ runCmd (CmdCheckRevdepsPolicy (map PackageName -> pkgs)) = do
                         _ | actualPol == pol -> Just actualPol
                           | otherwise        -> Just $ Policy_Many (pol:[actualPol])
 
-runCmd (CmdCheckPolicy (map PackageName -> pkgs)) = do
-    availablePackages <- loadAvailablePackages
+runCmd (CmdCheckPolicy rawArgs) = do
+    (pkgNames, pkgFileNames) <- packageArgs rawArgs
+
+    availablePackages <- loadAvailablePackages pkgFileNames
+
     matched <- foldallLatest availablePackages M.empty $ \acc pkgName pkgDesc ->
-        if pkgName `elem` pkgs
+        if pkgName `elem` pkgNames
             then return $ M.insert pkgName pkgDesc acc
             else return acc
     forM_ (M.toList matched) $ \(pkgName, pkgDesc) -> do

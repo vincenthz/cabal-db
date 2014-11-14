@@ -38,6 +38,8 @@ Executable           cabal-db
   Other-modules:     Graph
                    , Options
                    , Printing
+                   , Policy
+                   , Database
                    , Env
                    , Ver
   ghc-options:       -Wall -fno-warn-orphans -fno-warn-missing-signatures

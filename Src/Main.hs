@@ -1,7 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE CPP #-}
-import Distribution.PackageDescription.Parse
 import Distribution.PackageDescription.Configuration
 import Distribution.PackageDescription hiding (options)
 import Distribution.Package
@@ -17,21 +16,14 @@ import Control.Exception (bracket)
 import qualified Control.Exception as E
 import Control.Monad
 
-import System.Environment
-import qualified Codec.Archive.Tar as Tar
-
 import System.IO.Error
 import System.Process
 import System.Exit
 import System.Directory
-import System.FilePath
-import qualified Data.ByteString.Lazy as L
-import qualified Data.ByteString.Lazy.UTF8 as UTF8
 
 import qualified Data.Map as M
 import Data.Either
 import Data.List
-import Data.Maybe
 import Data.Tuple (swap)
 import Data.String
 
@@ -40,64 +32,10 @@ import Graph
 import Env
 import Ver
 import Printing
+import Policy
+import Database
 
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
-
--- FIXME use cabal's Version type.
-newtype AvailablePackages = AvailablePackages (M.Map PackageName [(Ver,L.ByteString)])
-
-data Policy =
-      Policy_Any            -- ^ no bounds
-    | Policy_LowerBoundOnly -- ^ only a lower specified
-    | Policy_Bounded        -- ^ when both bounds specified but not following the pvp as the version is not correct
-    | Policy_StrictPVP      -- ^ follow the PVP, lower bound, and higher bounds not greater to one that exist.
-    | Policy_Other          -- ^ unspecified
-    | Policy_Many [Policy]  -- ^ multiple policy in the same file. something probably went wrong in cabal-db :)
-    deriving (Show,Eq,Ord)
-
-showPolicy :: Policy -> PP.Doc -- String
-showPolicy Policy_Any            = PP.green $ PP.text "any"
-showPolicy Policy_LowerBoundOnly = PP.yellow $ PP.text "lower-bound"
-showPolicy Policy_StrictPVP      = PP.red $ PP.text "strict-pvp"
-showPolicy Policy_Bounded        = PP.blue $ PP.text "bounded"
-showPolicy Policy_Other          = PP.blue $ PP.text "other"
-showPolicy (Policy_Many  _)      = PP.blue $ PP.text "many"
-
-getPolicy :: AvailablePackages -> VersionRange -> Policy
-getPolicy (AvailablePackages _apkgs) vr
-    | isAnyVersion vr = Policy_Any
-    | otherwise       =
-        let vi = asVersionIntervals vr
-         in if and $ map isBounded vi
-                then Policy_StrictPVP
-                else Policy_LowerBoundOnly
-  where
-        isBounded (_, NoUpperBound)   = False
-        isBounded (_, UpperBound _ _) = True
-
--- | return cabal 00-index.tar filepath
-readCabalConfig = do
-    cfgEnv <- lookup "CABAL_CONFIG" <$> getEnvironment
-    cabalAppDir <- getAppUserDataDirectory "cabal"
-    let cabalAppConfig = cabalAppDir </> "config"
-    let configFile = fromMaybe cabalAppConfig cfgEnv
-
-    cfg <- parseConfig . preParse <$> readFile configFile
-    case (lookup "remote-repo" cfg, lookup "remote-repo-cache" cfg) of
-        (Just rrepo, Just rcache) ->
-            let (name,_) = fromMaybe (error "cannot parse remote-repo") $ parseOneLine rrepo in
-            return (rcache </> name </> "00-index.tar")
-        _ -> error ("cannot find 'remote-repo' and 'remote-repo-cache' in config file " ++ configFile)
-  where
-    parseConfig = catMaybes . map parseOneLine
-    preParse    = filter (not . isPrefixOf " ")  -- filter all spaces leading line
-                . filter (not . isPrefixOf "--") -- filter comments out
-                . filter (not . null)            -- filter null line out
-                . lines
-    parseOneLine line = let (a,b) = break (== ':') line
-                         in if null b
-                                then Nothing
-                                else Just (a, dropWhile (== ' ') $ drop 1 b)
 
 unPackageName :: PackageName -> String
 unPackageName (PackageName n) = n
@@ -113,18 +51,6 @@ finPkgDesc = finalizePackageDescription [] (const True) buildPlatform (CompilerI
 
 showVerconstr c = render $ Distribution.Text.disp c
 
-packageDescOfBS bs =
-    case parsePackageDescription $ UTF8.toString bs of
-         ParseFailed _ -> Nothing
-         ParseOk _ a   -> Just a
-
-getAllPackageName :: AvailablePackages -> [PackageName]
-getAllPackageName (AvailablePackages apkgs) = M.keys apkgs
-
-getPackageVersions :: AvailablePackages -> PackageName -> Maybe [Ver]
-getPackageVersions (AvailablePackages apkgs) pn =
-    sort . map fst <$> M.lookup pn apkgs
-
 getPackageDependencies :: AvailablePackages -> PackageName -> IO [Dependency]
 getPackageDependencies apkgs pn = do
     let desc = finPkgDesc <$> getPackageDescription apkgs pn Nothing
@@ -134,8 +60,6 @@ getPackageDependencies apkgs pn = do
 
 getPackageDependencyNames apkgs pn =
     map dependencyName <$> getPackageDependencies apkgs pn
-
-cabalFileToPkgName f = [takeBaseName f, "10000", ""]
 
 -- | partiion a list of arguments that refer to package
 -- either by their package name, or directly to a cabal file
@@ -149,52 +73,11 @@ packageArgs args = partitionEithers <$> mapM classifyArgs args
                 else Left $ PackageName arg
           where hasCabalExtension = ".cabal" `isSuffixOf` arg
 
--- | sort versions, lowest first
-sortVers :: [Ver] -> [Ver]
-sortVers = sort
-
-getPackageDescription :: AvailablePackages -> PackageName -> Maybe Ver -> Maybe GenericPackageDescription
-getPackageDescription (AvailablePackages apkgs) pn mver =
-    M.lookup pn apkgs >>= resolveVer mver >>= packageDescOfBS
-  where resolveVer Nothing pdescs  = lookup (last $ sortVers $ map fst pdescs) pdescs
-        resolveVer (Just v) pdescs = lookup v pdescs
-
-getPackageLatestMajorVersion :: AvailablePackages -> PackageName -> Maybe (Int,Int)
-getPackageLatestMajorVersion apkgs pn = versionMajor =<< last <$> getPackageVersions apkgs pn
-
 foldallLatest :: Monad m => AvailablePackages -> a -> (a -> PackageName -> PackageDescription -> m a) -> m a
 foldallLatest apkgs acc f = foldM process acc (getAllPackageName apkgs)
         where process a pn = case finPkgDesc <$> getPackageDescription apkgs pn Nothing of
                                 Just (Right (pd, _)) -> f a pn pd
                                 _                    -> return a
-
--- | Load the available packages from the tarball then append
--- an extra list of packages that are directly refered by filepath to their .cabal
-loadAvailablePackages :: [String] -> IO AvailablePackages
-loadAvailablePackages extras = do
-    tarFile <- readCabalConfig
-
-    m1 <- foldr mkMap (AvailablePackages M.empty) . listTar . Tar.read <$> L.readFile tarFile
-    foldr mkMap m1 <$> mapM (\f -> L.readFile f >>= \l -> return (cabalFileToPkgName f, l)) extras
-
-    where listTar :: Show e => Tar.Entries e -> [([FilePath],L.ByteString)]
-          listTar (Tar.Next ent nents) =
-                case Tar.entryContent ent of
-                    Tar.NormalFile bs _ -> (splitPath $ Tar.entryPath ent, bs) : listTar nents
-                    _                   -> listTar nents
-          listTar Tar.Done             = []
-          listTar (Tar.Fail err)       = error ("failed: " ++ show err)
-
-          mkMap :: ([FilePath], L.ByteString) -> AvailablePackages -> AvailablePackages
-          mkMap ([(dropTrailingPathSeparator -> packagename),packageVer,_],entBS) (AvailablePackages acc)
-                | packagename == "." = AvailablePackages acc
-                | otherwise          = AvailablePackages $ tweak (PackageName packagename)
-                                                                 (fromString $ dropTrailingPathSeparator packageVer)
-                                                                 entBS acc
-                          where tweak !pname !pver !cfile !m = M.alter alterF pname m
-                                  where alterF Nothing  = Just [(pver,cfile)]
-                                        alterF (Just z) = Just ((pver,cfile) : z)
-          mkMap _ nacc = nacc
 
 -----------------------------------------------------------------------
 
@@ -446,16 +329,17 @@ runCmd (CmdCheckPolicy rawArgs) = do
 
     availablePackages <- loadAvailablePackages pkgFileNames
 
-    matched <- foldallLatest availablePackages M.empty $ \acc pkgName pkgDesc ->
-        if pkgName `elem` pkgNames
-            then return $ M.insert pkgName pkgDesc acc
+    matched <- foldallLatest availablePackages M.empty $ \acc name pkgDesc ->
+        if name `elem` pkgNames
+            then return $ M.insert name pkgDesc acc
             else return acc
-    forM_ (M.toList matched) $ \(pkgName, pkgDesc) -> do
-        putStrLn ("== " ++ unPackageName pkgName)
-        let depends = map (\d -> (dependencyName d, getPolicy availablePackages $ dependencyConstraints d))
-                    $ buildDepends pkgDesc
-        let sums = map (\l -> (head l, length l)) $ group $ sort $ map snd depends
-        forM_ depends $ \(n,p) ->
+    forM_ (M.toList matched) $ \(name, pkgDesc) -> do
+        putStrLn ("== " ++ unPackageName name)
+        let packageDepends = map (\d -> (dependencyName d, getPolicy availablePackages $ dependencyConstraints d))
+                           $ buildDepends pkgDesc
+        let sums = map (\l -> (head l, length l)) $ group $ sort $ map snd packageDepends
+
+        forM_ packageDepends $ \(n,p) ->
             ppLine 4 $ PP.hcat [ PP.string "* ", PP.string (unPackageName n), PP.string " = ", showPolicy p]
         forM_ sums $ \(policy, n) ->
             ppLine 2 $ PP.hcat [ showPolicy policy, PP.string " = ", PP.string (show n), PP.string " packages"]

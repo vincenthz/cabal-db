@@ -1,5 +1,5 @@
 Name:                cabal-db
-Version:             0.1.10
+Version:             0.1.11
 Synopsis:            query tools for the local cabal database
 Description:
     Query tool for the local cabal database

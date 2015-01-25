@@ -37,8 +37,10 @@ import Database
 
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
+#if !MIN_VERSION_Cabal(1,22,0)
 unPackageName :: PackageName -> String
 unPackageName (PackageName n) = n
+#endif
 
 dependencyName :: Dependency -> PackageName
 dependencyName (Dependency n _) = n
@@ -46,8 +48,14 @@ dependencyName (Dependency n _) = n
 dependencyConstraints :: Dependency -> VersionRange
 dependencyConstraints (Dependency _ v) = v
 
+#if MIN_VERSION_Cabal(1,22,0)
+finPkgDesc :: GenericPackageDescription -> Either [Dependency] (PackageDescription, FlagAssignment)
+finPkgDesc = finalizePackageDescription [] (const True) buildPlatform compilerInfo []
+  where compilerInfo = unknownCompilerInfo (CompilerId buildCompilerFlavor (Version []{-[7, 6, 2]-} [])) NoAbiTag
+#else
 finPkgDesc :: GenericPackageDescription -> Either [Dependency] (PackageDescription, FlagAssignment)
 finPkgDesc = finalizePackageDescription [] (const True) buildPlatform (CompilerId buildCompilerFlavor (Version []{-[7, 6, 2]-} [])) []
+#endif
 
 showVerconstr c = render $ Distribution.Text.disp c
 

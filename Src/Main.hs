@@ -299,8 +299,8 @@ runCmd (CmdVCS rawArgs) = do
                             uriTexts = showVCS <$> found
                         ppLine indentSpaces $ PP.text name PP.<> PP.colon
                         case uriTexts of
-                          [] → ppLine (indentSpaces+2) $ col Red "No associated repo"
-                          _ → mapM_ (ppLine(indentSpaces+2)) uriTexts
+                          [] -> ppLine (indentSpaces+2) $ col Red "No associated repo"
+                          _ -> mapM_ (ppLine(indentSpaces+2)) uriTexts
                         case M.lookup pn tbl of
                             Just l  -> foldM (loop apkgs tbl (indentSpaces + 2)) (M.insert pn found founds) l
                             Nothing -> error "internal error"

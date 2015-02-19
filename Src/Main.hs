@@ -24,8 +24,9 @@ import System.Directory
 import qualified Data.Map as M
 import Data.Either
 import Data.List
-import Data.Tuple (swap)
+import Data.Maybe (catMaybes)
 import Data.String
+import Data.Tuple (swap)
 
 import Options
 import Graph
@@ -98,6 +99,15 @@ unindexify (aTable, edgeTable) = map (resolveKeyValues resolveIndex) $ M.toList 
   where resolveKeyValues r (k,l) = (r k, map r l)
         resolveIndex i = maybe (error ("internal error: unknown index: " ++ show i)) id $ M.lookup i idxTable
         idxTable = M.fromList $ map swap $ M.toList aTable
+
+vcs :: PackageDescription -> [(String,String)]
+vcs = catMaybes . fmap f . sourceRepos
+  where f r = do loc <- repoLocation r
+                 let rev = case (repoTag r, repoBranch r) of
+                       (Just a, _)        -> a
+                       (Nothing, Just b)  -> b
+                       (Nothing, Nothing) -> "master"
+                 return (loc,rev)
 
 -----------------------------------------------------------------------
 run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize $ mapM_ (graphLoop getDeps) specifiedPackages
@@ -266,6 +276,35 @@ runCmd (CmdLicense printTree printSummary rawArgs) = do
         ppLicense BSD4                             = ("BSD4", col Green)
         ppLicense MIT                              = ("MIT", col Green)
         ppLicense l                                = (show l, col Magenta)
+
+-----------------------------------------------------------------------
+runCmd (CmdVCS rawArgs) = do
+    (pkgNames, pkgFileNames) <- packageArgs rawArgs
+
+    availablePackages <- loadAvailablePackages pkgFileNames
+
+    let depNames = getPackageDependencyNames availablePackages
+        mkGraph = mapM_ (graphLoop depNames) pkgNames
+    t <- M.fromList . unindexify <$> withGraph mkGraph
+    void $ foldM (loop availablePackages t 0) M.empty pkgNames
+  where
+        showVCS (url,rev) = col Yellow $ concat [url, "@",  rev]
+        loop apkgs tbl indentSpaces founds pn@(PackageName name)
+            | M.member pn founds = return founds
+            | otherwise = do
+                let desc = finPkgDesc <$> getPackageDescription apkgs pn Nothing
+                case desc of
+                    Just (Right (d,_)) -> do
+                        let found = vcs d
+                            uriTexts = showVCS <$> found
+                        ppLine indentSpaces $ PP.text name PP.<> PP.colon
+                        case uriTexts of
+                          [] → ppLine (indentSpaces+2) $ col Red "No associated repo"
+                          _ → mapM_ (ppLine(indentSpaces+2)) uriTexts
+                        case M.lookup pn tbl of
+                            Just l  -> foldM (loop apkgs tbl (indentSpaces + 2)) (M.insert pn found founds) l
+                            Nothing -> error "internal error"
+                    _ -> return founds
 
 -----------------------------------------------------------------------
 runCmd (CmdSearch term vals) = do

@@ -33,6 +33,9 @@ data Command =
         , licensePrintSummary :: Bool
         , licensePackages :: [String]
         }
+    | CmdVCS
+        { vcsPackages :: [String]
+        }
     | CmdBumpable
         { bumpablePackages :: [String]
         }
@@ -54,6 +57,7 @@ commands =
     , ("search-author", cmdSearch SearchAuthor, "search the cabal database by author(s)")
     , ("search-maintainer", cmdSearch SearchMaintainer, "search the cabal database by maintainer(s)")
     , ("license", cmdLicense, "list all licenses of a set of packages and their dependencies")
+    , ("vcs", cmdVCS, "list all registered repo URLs for each a set of packages and their dependencies")
     , ("bumpable", cmdBumpable, "list all dependencies that could receive an upper-bound version bump")
     , ("check-revdeps-policy", cmdCheckRevdepsPolicy, "check dependencies policy for reverse dependencies of a list of packages")
     , ("check-policy", cmdCheckPolicy, "check dependencies policy for packages")
@@ -77,6 +81,8 @@ commands =
                 <$> switch (short 't' <> long "tree" <> help "show the tree dependencies of license")
                 <*> switch (short 's' <> long "summary" <> help "Show the summary")
                 <*> packages
+        cmdVCS = CmdVCS
+                <$> packages
         cmdBumpable = CmdBumpable
                 <$> packages
         cmdCheckRevdepsPolicy = CmdCheckRevdepsPolicy

@@ -70,7 +70,7 @@ getPackageDependencies apkgs pn = do
 getPackageDependencyNames apkgs pn =
     map dependencyName <$> getPackageDependencies apkgs pn
 
--- | partiion a list of arguments that refer to package
+-- | partition a list of arguments that refer to package
 -- either by their package name, or directly to a cabal file
 packageArgs :: [String] -> IO ([PackageName], [FilePath])
 packageArgs args = partitionEithers <$> mapM classifyArgs args
@@ -140,6 +140,7 @@ run apkgs hidePlatform hiddenPackages specifiedPackages = generateDotM colorize 
 -----------------------------------------------------------------------
 runCmd (CmdGraph (map PackageName -> hidden) hidePlatform rawArgs) = do
     (pkgNames, pkgFileNames) <- packageArgs rawArgs
+    when (pkgNames == []) $ error "graph: no package(s) specified"
     availablePackages        <- loadAvailablePackages pkgFileNames
     run availablePackages hidePlatform hidden pkgNames
 

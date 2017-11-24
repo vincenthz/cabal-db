@@ -5,7 +5,7 @@ module Options
     ) where
 
 import Options.Applicative
-import Data.Monoid (mconcat)
+import Data.Monoid (mconcat, (<>))
 
 data Command =
       CmdGraph

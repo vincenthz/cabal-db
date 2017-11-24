@@ -73,10 +73,14 @@ readCabalConfig = do
     let configFile = fromMaybe cabalAppConfig cfgEnv
 
     cfg <- parseConfig . preParse <$> readFile configFile
-    case (lookup "remote-repo" cfg, lookup "remote-repo-cache" cfg) of
-        (Just rrepo, Just rcache) ->
+    case (lookup "remote-repo" cfg, lookup "repository" cfg, lookup "remote-repo-cache" cfg) of
+        (Just rrepo, _, Just rcache) ->
             let (name,_) = fromMaybe (error "cannot parse remote-repo") $ parseOneLine rrepo in
             return (rcache </> name </> "00-index.tar")
+        (Nothing, Just name, Just rcache) ->
+            return (rcache </> name </> "01-index.tar")
+        (Nothing, Nothing, Just _) ->
+            error ("cannot find 'remote-repo' or 'repository' in config file " ++ configFile)
         _ -> error ("cannot find 'remote-repo' and 'remote-repo-cache' in config file " ++ configFile)
   where
     parseConfig = catMaybes . map parseOneLine
@@ -84,10 +88,15 @@ readCabalConfig = do
                 . filter (not . isPrefixOf "--") -- filter comments out
                 . filter (not . null)            -- filter null line out
                 . lines
+    -- most lines are of the form "tag: value"
+    -- but also catch the declaration "repository REPONAME"
     parseOneLine line = let (a,b) = break (== ':') line
-                         in if null b
-                                then Nothing
-                                else Just (a, dropWhile (== ' ') $ drop 1 b)
+                        in if null b
+                           then let (c,d) = break (== ' ') line
+                                in if null d
+                                   then Nothing
+                                   else Just (c, dropWhile (== ' ') d)
+                           else Just (a, dropWhile (== ' ') $ drop 1 b)
 
 getPackageDescription :: AvailablePackages -> PackageName -> Maybe Ver -> Maybe GenericPackageDescription
 getPackageDescription (AvailablePackages apkgs) pn mver =

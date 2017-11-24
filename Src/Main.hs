@@ -204,6 +204,22 @@ runCmd (CmdDiff (PackageName -> pname) (fromString -> v1) (fromString -> v2)) = 
             return ()
 
 -----------------------------------------------------------------------
+runCmd (CmdDeps (PackageName -> pname) (fromString -> v1)) = do
+        (_pkgNames, pkgFileNames) <- packageArgs []
+        availablePackages <- loadAvailablePackages pkgFileNames
+        let mvers = getPackageVersions availablePackages pname
+        case mvers of
+          Nothing -> error ("no such package : " ++ show pname)
+          Just vers -> do
+                     when (not $ elem v1 vers) $ error ("package doesn't have version " ++ show v1)
+                     let pdesc = finPkgDesc <$> getPackageDescription availablePackages pname (Just v1)
+                     case pdesc of
+                       Just (Right (d,_)) ->
+                           mapM_ (putStrLn . showDep) (buildDepends d)
+                       _                  -> error "cannot resolve package"
+        where showDep (Dependency p v) = unPackageName p ++ " (" ++ showVerconstr v ++ ")"
+
+-----------------------------------------------------------------------
 runCmd (CmdRevdeps rawArgs)
     | null rawArgs = exitSuccess
     | otherwise = do

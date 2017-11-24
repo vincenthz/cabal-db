@@ -5,7 +5,7 @@ module Options
     ) where
 
 import Options.Applicative
-import Data.Monoid (mconcat)
+import Data.Monoid (mconcat, (<>))
 
 data Command =
       CmdGraph
@@ -17,6 +17,10 @@ data Command =
         { diffPackage :: String
         , diffVer1    :: String
         , diffVer2    :: String
+        }
+    | CmdDeps
+        { depPackage  :: String
+        , depVer1     :: String
         }
     | CmdRevdeps
         { revdepPackages :: [String]
@@ -52,6 +56,7 @@ data SearchTerm = SearchMaintainer | SearchAuthor
 commands =
     [ ("graph", cmdGraph, "generate a .dot dependencies graph of all the packages in argument")
     , ("diff", cmdDiff, "generate a diff between two versions of a package")
+    , ("deps", cmdDeps, "generate a list of package dependencies")
     , ("revdeps", cmdRevdeps, "list all reverse dependencies of a set of packages")
     , ("info", cmdInfo, "list some information about a set of packages")
     , ("search-author", cmdSearch SearchAuthor, "search the cabal database by author(s)")
@@ -71,6 +76,9 @@ commands =
                 <$> argument str (metavar "<package>")
                 <*> argument str (metavar "<ver1>")
                 <*> argument str (metavar "<ver2>")
+        cmdDeps = CmdDeps
+                <$> argument str (metavar "<package>")
+                <*> argument str (metavar "<version>")
         cmdRevdeps = CmdRevdeps
                 <$> packages
         cmdInfo = CmdInfo
